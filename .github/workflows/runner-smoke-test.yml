@@ -1,0 +1,13 @@
+name: runner-smoke-test
+on:
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: [self-hosted, macOS, ARM64, wow-mac]
+    steps:
+      - uses: actions/checkout@v4
+      - run: sw_vers
+      - run: xcodebuild -version
+      - run: xcrun --show-sdk-version
+      - run: node -v && npm -v
+      - run: uname -m
