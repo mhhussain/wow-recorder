@@ -99,6 +99,12 @@ const play = async (flavour: Flavour, name: string, file = 'excerpts') => {
     await jest.advanceTimersByTimeAsync(1000);
   }
 
+  // Some endings run outside the line queue (Classic arena team wipes call
+  // endArena without awaiting it); let their overrun elapse too.
+  for (let i = 0; i < 60 && LogHandler.overrunning; i++) {
+    await jest.advanceTimersByTimeAsync(1000);
+  }
+
   handler.destroy();
 
   return queue.queued.splice(0);
@@ -348,6 +354,43 @@ const haveFullLogs = fs.existsSync(path.join(fullLogs, 'retail/raid_wipe.txt'));
     async (name, hp) => {
       const [video] = await play('retail', name as string, 'combatlogs');
       expect(video.metadata.bossPercent).toBe(hp);
+    },
+    120000,
+  );
+});
+
+/**
+ * PvP (post-MVP, phase 7). These logs are small, so they run unexcerpted;
+ * CI's sparse checkout includes them.
+ */
+const havePvpLogs = fs.existsSync(path.join(fullLogs, 'retail/rated_2v2.txt'));
+
+(havePvpLogs ? describe : describe.skip)('pvp (full logs)', () => {
+  const pvp: [Flavour, string, string[]][] = [
+    ['retail', 'rated_2v2', ['Alexhots - 2v2 Enigma Crucible (Win)']],
+    ['retail', 'rated_2v2_afk_out', ['Alexhots - 2v2 Enigma Crucible (Loss)']],
+    ['retail', 'rated_3v3', ["Alexsmite - 3v3 Tol'viron (Loss)"]],
+    ['retail', 'rated_battleground', ['Alexsmite - Temple of Kotmogu (Loss)']],
+    [
+      'retail',
+      'rated_solo_shuffle',
+      ["Alexsmite - Solo Shuffle Tiger's Peak (3-3)"],
+    ],
+    ['retail', 'skirmish', ['Alexsmite - Skirmish Nagrand (Win)']],
+    ['retail', 'wargame_3v3', ["Alexsmite - 3v3 Tol'viron (Loss)"]],
+    ['classic', 'rated_2v2', ["Alexpals - 2v2 Blade's Edge (Win)"]],
+    ['classic', 'rated_3v3', ['Alexpals - 3v3 Dalaran (Win)']],
+    ['classic', 'rated_5v5', ['Alexpals - 5v5 Ruins of Lordaeron (Loss)']],
+    ['classic', 'battleground', ['Alexpals - Warsong Gulch (Loss)']],
+    ['classic', 'rated_2v2_extra_units', ['Jammln - 2v2 Dalaran (Loss)']],
+    ['classic', 'rated_2v2_feign_death', ['Jammln - 2v2 Nagrand (Win)']],
+  ];
+
+  test.each(pvp)(
+    '%s/%s',
+    async (flavour, name, expected) => {
+      const videos = await play(flavour, name, 'combatlogs');
+      expect(names(videos)).toEqual(expected);
     },
     120000,
   );

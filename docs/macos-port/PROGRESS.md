@@ -50,7 +50,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ### Phase 7 (optional, after MVP)
 - [x] Classic and Era: free (D-006); scenario tests pass for Classic raid, MoP challenge mode, Era raid
-- [ ] PvP triggers: code is unchanged and platform-agnostic (arena/BG/shuffle activity unit tests pass); no PvP scenario tests on the fixture logs yet
+- [x] PvP triggers: code unchanged and platform-agnostic; 13 scenario tests on the real PvP fixture logs (Retail 2v2/3v3/skirmish/wargame/solo shuffle/rated BG/AFK-out, Classic 2v2/3v3/5v5/BG/extra units/feign death) match upstream's expected outcomes
 - [ ] Secondary features: preview/scene editor, chat overlay, cloud (untouched), viewer polish
 
 ## Last session

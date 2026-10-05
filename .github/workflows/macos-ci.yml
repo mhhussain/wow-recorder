@@ -46,12 +46,16 @@ jobs:
           clean: ${{ inputs.clean == true }}
           fetch-depth: 1
           filter: blob:none
-          # Skip the ~800 MB of full combat logs; unit tests use excerpts.
+          # Skip the large raid and M+ logs (unit tests use excerpts of
+          # them) and upstream's duplicate copies; keep the small PvP logs.
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /*
             !/tests/logs/
-            !/tests/fixtures/combatlogs/
+            !/tests/fixtures/combatlogs/retail/raid_*
+            !/tests/fixtures/combatlogs/retail/mythic_plus*
+            !/tests/fixtures/combatlogs/retail/beloren_boss_hp.txt
+            !/tests/fixtures/combatlogs/retail/coiled_altar_boss_hp.txt
 
       - name: Toolchain
         run: |
