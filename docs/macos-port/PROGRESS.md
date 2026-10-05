@@ -5,9 +5,9 @@ Single source of truth for resuming. Update before every checkpoint commit.
 ## Current state
 
 - **Current phase:** 6 (verification and handoff): waiting on the owner's on-device test (MANUAL_TEST.md)
-- **Last checkpoint tag:** `macos-port-phase-5` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** run 37264154520 (commit 0601506) green in 84 s: typecheck, lint, 52 unit tests (17 full-log tests skipped by design), helper build + probe + self-test, webpack build, package, signature/Info.plist/binary checks, artifact `WarcraftRecorder-macos-arm64-0601506…` (161 MB zip, artifact 11325498319, expires after 7 days).
-- **Exact next step:** confirm the CI run with the shim-to-helper integration test and the packaged-app boot smoke test is green (if the runner cannot host a hidden Electron window, record that and drop or gate the smoke step). Then wait for the owner's MANUAL_TEST.md results.
+- **Last checkpoint tag:** `macos-port-phase-7-pvp` (local only; see blocker B-001 and the tag table below)
+- **Latest CI result:** run 37264835448 (commit af5550d) green in 100 s: typecheck, lint, unit tests incl. shim-to-helper integration and 13 PvP scenarios, helper probe + self-test, webpack build, package, signature/Info.plist/binary checks, packaged-app boot smoke test (PASS: helper running, encoders listed, renderer drew UI), artifact `WarcraftRecorder-macos-arm64-af5550d…` (artifact 11325693053, expires 2026-10-12).
+- **Exact next step:** owner runs `docs/macos-port/MANUAL_TEST.md` (start with section 4, the fake-WoW smoke test) and reports results plus the newest log from `~/Library/Logs/WarcraftRecorder/`. Agent then fixes whatever on-device testing finds; likely first suspects are listed under "Not verified" below.
 
 ## Phase checklist
 
@@ -76,6 +76,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 | `macos-port-phase-3` | `c3884ea` | no (B-001) |
 | `macos-port-phase-4` | `d4bf5f0` | no (B-001) |
 | `macos-port-phase-5` | `0601506` | no (B-001) |
+| `macos-port-phase-6` | `bdeaed1` | no (B-001) |
+| `macos-port-phase-7-pvp` | `af5550d` | no (B-001) |
 
 ## In-flight experiments
 
@@ -83,7 +85,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Verified vs assumed
 
-- **Verified on the runner (CI):** helper compiles against SDK 27; VideoToolbox H.264/HEVC hardware sessions with constant quality; ScreenCaptureKit audio/mic config surface exists; synthetic end-to-end recording through the real engine and command protocol (buffer, convert with offset, convert before first frame, six-track mix with expected per-track levels, fragmented MP4, stop, force stop) produces correct files that ffmpeg decodes; ffmpeg avfoundation exposes no system audio device; log watcher tests on FSEvents; packaged app signature valid, Info.plist strings present, bundled helper and ffmpeg execute.
+- **Verified on the runner (CI):** packaged app boots (hidden, no permissions) with the helper running from the bundle; TypeScript shim drives the real helper to a correct recording; helper compiles against SDK 27; VideoToolbox H.264/HEVC hardware sessions with constant quality; ScreenCaptureKit audio/mic config surface exists; synthetic end-to-end recording through the real engine and command protocol (buffer, convert with offset, convert before first frame, six-track mix with expected per-track levels, fragmented MP4, stop, force stop) produces correct files that ffmpeg decodes; ffmpeg avfoundation exposes no system audio device; log watcher tests on FSEvents; packaged app signature valid, Info.plist strings present, bundled helper and ffmpeg execute.
 - **Verified by unit tests (real combat logs, mocked recorder):** raid/M+/Classic/Era start, stop, keep/discard and naming match upstream's integration expectations; excerpts are faithful to the full logs; Poller flavour detection; shim config mapping, command ordering, crash recovery.
 - **Not verified (needs the owner, TCC-gated):** real ScreenCaptureKit capture of the WoW window and display; system, app and microphone audio in real recordings; TCC attribution of the helper process to WarcraftRecorder.app; permission behaviour across ad-hoc rebuilds; A/V sync under load; whether the Mac WoW client writes `.flavor.info`; WoW bundle ID/app name assumptions (`com.blizzard.worldofwarcraft*`, "World of Warcraft*"); the app UI end to end (never launched in CI to avoid permission prompts on the owner's desktop).
 - **Known gaps (by design, D-004):** no live preview/scene editor, no chat overlay compositing, noise suppression is a noise gate, no output-device selection for system audio.
