@@ -6,8 +6,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 - **Current phase:** 4 (macOS MVP implementation)
 - **Last checkpoint tag:** `macos-port-phase-3` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** `macos-ci` run 37261237609 (commit 58a5a82) green in 40 s: helper compiles, probe OK, self-test pass (3 recordings verified: durations 5.08/5.07/2.03 s, 6 AAC tracks with expected levels, avc1/hvc1), ffmpeg decodes all.
-- **Exact next step:** check CI for the shim commit (npm ci, typecheck, lint, test, build:native, self-test, build on the runner). Then: ps-based Poller, CombatLogWatcher hardening, LogHandler state-machine tests with fixture excerpts.
+- **Latest CI result:** run 37262825992 (commit 2418558) red at `npm ci`: electron-rebuild could not map Electron 44.4.5 to an ABI with node-abi 4.31.0. Fixed in the next commit (node-abi 4.36.0). Last green: run 37261237609 (helper spike).
+- **Exact next step:** confirm CI green with the node-abi fix; then LogHandler state-machine tests driven by fixture excerpts (raids, M+) with a mocked recorder.
 
 ## Phase checklist
 
@@ -31,8 +31,9 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [x] Quality gates green locally (tsc 0 errors, lint 0 errors, jest 27 tests)
 - [x] `noobs` removed; `MacNoobs` shim + `CaptureHelper` client wired into Recorder (fail-fast start errors, VideoToolbox encoders and quality mapping); shim unit tests
 - [ ] Unit tests: log parsing and start/stop state machine for raids and M+ using real fixtures and a mocked recorder
-- [ ] Log folder discovery and robust log tailing on macOS
-- [ ] WoW process detection
+- [ ] Log folder discovery
+- [x] Robust log tailing on macOS (stat-driven reads, inode/truncation detection, partial-line carry-over, 1 s poll backstop; tests)
+- [x] WoW process detection (`ps` poller, flavour by install folder, WCR_FAKE_WOW for testing; tests)
 - [ ] Recorder backend wired to existing settings (video + audio)
 - [ ] Permission handling (screen recording, microphone)
 - [ ] Windows-only features disabled or removed

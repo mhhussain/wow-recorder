@@ -1,26 +1,32 @@
 import { EventEmitter } from 'stream';
 import fs, { watch, FSWatcher } from 'fs';
-import util from 'util';
-import { FileInfo } from 'main/types';
 import path from 'path';
-import { getFileInfo, getSortedFiles } from '../main/util';
+import { getSortedFiles } from '../main/util';
 import LogLine from './LogLine';
 import AsyncQueue from 'utils/AsyncQueue';
 
 /**
- * Setup a bunch of promisified fs calls for convienence.
+ * What we remember about each log file between reads.
  */
-const open = util.promisify(fs.open);
-const read = util.promisify(fs.read);
-const close = util.promisify(fs.close);
+type TrackedFile = {
+  size: number;
+  ino: number;
+};
 
 /**
  * Watches a directory for combat logs, read the new data from them
  * and emits events containing a LogLine object for processing elsewhere.
  *
- * I'm a bit nervous about race conditions here in multiple read calls. I
- * considered using p-queue, but I think it's probably fine as almost
- * certainly we won't have combat log writes close enough together to hit it.
+ * macOS port: reads are driven by stat() rather than by the watcher's event
+ * type. Node's fs.watch on macOS sits on FSEvents, which coalesces events
+ * and can report writes to a recently created file as 'rename'. Upstream
+ * treated 'rename' as "file recreated, reset to byte 0", which on macOS
+ * could replay a whole log or never read it. Instead every event (and a
+ * one second poll of the active file, as a backstop for coalesced events)
+ * triggers a stat: growth is read incrementally, a shrink or a new inode
+ * means the file was truncated or recreated and is read from the start
+ * (upstream issue 624). Partial trailing lines are carried over to the next
+ * read rather than parsed early.
  */
 export default class CombatLogWatcher extends EventEmitter {
   /**
@@ -34,10 +40,23 @@ export default class CombatLogWatcher extends EventEmitter {
   private watcher?: FSWatcher;
 
   /**
+   * Backstop poll of the active log file.
+   */
+  private pollTimer?: NodeJS.Timeout;
+
+  private pollIntervalMs: number;
+
+  /**
    * We need to keep track of some info about each log file to know how much we
    * should read.
    */
-  private state: Record<string, FileInfo> = {};
+  private state: Record<string, TrackedFile> = {};
+
+  /**
+   * Incomplete final line from the last read of each file, kept as bytes so
+   * a multi-byte UTF-8 character split across reads decodes correctly.
+   */
+  private remainders: Record<string, Buffer> = {};
 
   /**
    * A promise queue we use to ensure that we only have one active attempt to
@@ -46,18 +65,18 @@ export default class CombatLogWatcher extends EventEmitter {
   private queue = new AsyncQueue(Number.MAX_SAFE_INTEGER);
 
   /**
-   * The most recently updated log file, we remember this purely so we can
-   * log when it changes.
+   * The most recently updated log file, polled as a backstop and logged
+   * when it changes.
    */
   private current = '';
 
   /**
-   * Constructor, unit of timeout is minutes. No events will be emitted until
-   * watch() is called.
+   * Constructor. No events will be emitted until watch() is called.
    */
-  constructor(logDir: string) {
+  constructor(logDir: string, pollIntervalMs = 1000) {
     super();
     this.logDir = logDir;
+    this.pollIntervalMs = pollIntervalMs;
   }
 
   /**
@@ -67,7 +86,7 @@ export default class CombatLogWatcher extends EventEmitter {
     await this.getLogDirectoryState();
     this.watcher = watch(this.logDir);
 
-    this.watcher.on('change', (type, file) => {
+    this.watcher.on('change', (_type, file) => {
       if (typeof file !== 'string') {
         return;
       }
@@ -76,36 +95,39 @@ export default class CombatLogWatcher extends EventEmitter {
         return;
       }
 
-      if (type === 'rename') {
-        // Despite this being a 'change' listener, we can still get
-        // rename events here, see the Node watch API. The rename event
-        // misleadingly fires for both file creation and deletion.
-        //
-        // We reset the position in a file on either, such that a file
-        // recreated with the same name will be read from the start. See
-        // Issue 624.
-        console.info('[CombatLogWatcher] Create or delete event', file);
-        const fullPath = path.join(this.logDir, file);
-        delete this.state[fullPath];
-        return;
-      }
-
       if (file !== this.current) {
         console.info('[CombatLogWatcher] New active log file', file);
         this.current = file;
       }
 
-      this.queue.add(() => this.process(file));
+      this.queueProcess(file);
     });
+
+    this.watcher.on('error', (error) => {
+      console.error('[CombatLogWatcher] Watcher error', String(error));
+    });
+
+    this.pollTimer = setInterval(() => {
+      if (this.current) this.queueProcess(this.current);
+    }, this.pollIntervalMs);
   }
 
   /**
    * Stop watching the directory.
    */
   public async unwatch() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
+    }
+
     if (this.watcher) {
       await this.watcher.close();
     }
+  }
+
+  private queueProcess(file: string) {
+    this.queue.add(() => this.process(file));
   }
 
   /**
@@ -115,47 +137,58 @@ export default class CombatLogWatcher extends EventEmitter {
   private async getLogDirectoryState() {
     const logs = await getSortedFiles(this.logDir, 'WoWCombatLog.*.txt');
 
-    if (logs.length < 1) {
-      return;
+    await Promise.all(
+      logs.map(async (log) => {
+        try {
+          const stat = await fs.promises.stat(log.name);
+          this.state[log.name] = { size: stat.size, ino: stat.ino };
+        } catch {
+          // Deleted while listing; nothing to track.
+        }
+      }),
+    );
+
+    if (logs.length > 0) {
+      // getSortedFiles returns newest first.
+      this.current = path.basename(logs[0].name);
     }
-
-    const fileInfoPromises = logs.map((f) => f.name).map(getFileInfo);
-    const fileInfo = await Promise.all(fileInfoPromises);
-
-    fileInfo.forEach((info) => {
-      this.state[info.name] = info;
-    });
   }
 
   /**
-   * Process a change event receieved from the directory watcher.
+   * Read whatever is new in a log file. Public for tests.
    */
-  private async process(file: string) {
+  public async process(file: string) {
     const fullPath = path.join(this.logDir, file);
-    const currentInfo = await getFileInfo(fullPath);
-    const lastInfo = this.state[fullPath];
+    let stat: fs.Stats;
 
-    let bytesToRead;
-    let startPosition;
-
-    if (lastInfo) {
-      // Existing file, read from the last known length.
-      bytesToRead = currentInfo.size - lastInfo.size;
-      startPosition = lastInfo.size;
-    } else {
-      // New file, we want to read from the start.
-      bytesToRead = currentInfo.size;
-      startPosition = 0;
-    }
-
-    if (bytesToRead < 1) {
-      // The node fs watcher is known to sometimes emit multiple events for
-      // the same write. This lets us drop out early if there is nothing to read.
+    try {
+      stat = await fs.promises.stat(fullPath);
+    } catch {
+      // Deleted. Forget it so a recreated file is read from the start.
+      delete this.state[fullPath];
+      delete this.remainders[fullPath];
       return;
     }
 
-    await this.parseFileChunk(fullPath, bytesToRead, startPosition);
-    this.state[fullPath] = currentInfo;
+    const last = this.state[fullPath];
+    let start = 0;
+
+    if (last && last.ino === stat.ino && stat.size >= last.size) {
+      start = last.size;
+    } else if (last) {
+      console.info('[CombatLogWatcher] Log truncated or replaced', file);
+      delete this.remainders[fullPath];
+    }
+
+    this.state[fullPath] = { size: stat.size, ino: stat.ino };
+    const bytes = stat.size - start;
+
+    if (bytes < 1) {
+      // Duplicate event or poll with nothing new.
+      return;
+    }
+
+    await this.parseFileChunk(fullPath, bytes, start);
   }
 
   /**
@@ -163,9 +196,14 @@ export default class CombatLogWatcher extends EventEmitter {
    */
   private async parseFileChunk(file: string, bytes: number, position: number) {
     const buffer = Buffer.alloc(bytes);
-    const handle = await open(file, 'r');
-    const { bytesRead } = await read(handle, buffer, 0, bytes, position);
-    close(handle);
+    const handle = await fs.promises.open(file, 'r');
+    let bytesRead = 0;
+
+    try {
+      ({ bytesRead } = await handle.read(buffer, 0, bytes, position));
+    } finally {
+      await handle.close();
+    }
 
     if (bytesRead !== bytes) {
       console.error(
@@ -178,15 +216,22 @@ export default class CombatLogWatcher extends EventEmitter {
 
     this.emit('WARCRAFT_RECORDER_LOG_ACTIVITY');
 
-    const lines = buffer
+    const remainder = this.remainders[file];
+    const read = buffer.subarray(0, bytesRead);
+    const data = remainder ? Buffer.concat([remainder, read]) : read;
+
+    // Everything after the last newline is a partial line; keep it for the
+    // next read.
+    const end = data.lastIndexOf(0x0a) + 1;
+    this.remainders[file] = Buffer.from(data.subarray(end));
+
+    data
+      .subarray(0, end)
       .toString('utf-8')
       .split('\n')
       .map((s) => s.trim())
-      .filter((s) => s);
-
-    lines.forEach((line) => {
-      this.handleLogLine(line);
-    });
+      .filter((s) => s)
+      .forEach((line) => this.handleLogLine(line));
   }
 
   /**
