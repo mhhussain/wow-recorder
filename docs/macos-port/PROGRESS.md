@@ -6,8 +6,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 - **Current phase:** 6 (verification and handoff): fixing on-device findings
 - **Last checkpoint tag:** `macos-port-phase-7-pvp` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** run 37388526168 (commit eeeda9d, D-011) green: typecheck, lint, 78 tests passed (17 skipped are the full-log fidelity tests whose large logs CI deliberately leaves out), helper build, probe and self-test, package, smoke test PASS, artifact uploaded. The follow-up commit (SCStream background color lifetime) needs its own run.
-- **Exact next step:** after CI is green on the D-011 commit, owner installs the new build (MANUAL_TEST.md section 1, then section 2: reset and re-grant Screen Recording and Microphone, since the signature changed), opens WoW, checks the status shows "Ready to record", and repeats the Mythic+ run. If anything fails, send the output of the log command in MANUAL_TEST.md section 9.
+- **Latest CI result:** run 37388765234 (commit fa09130) green: typecheck, lint, 78 tests passed (17 skipped are the full-log fidelity tests whose large logs CI deliberately leaves out), helper build, probe and self-test, package, smoke test PASS, artifact uploaded. Includes D-011 (run 37388526168, also green) and the SCStream background color lifetime fix.
+- **Exact next step:** owner installs the new build (MANUAL_TEST.md section 1, then section 2: reset and re-grant Screen Recording and Microphone, since the signature changed), opens WoW, checks the status shows "Ready to record", and repeats the Mythic+ run. If anything fails, send the output of the log command in MANUAL_TEST.md section 9.
 
 ## Phase checklist
 
