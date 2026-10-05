@@ -11,6 +11,8 @@ Pick one.
 **A. From the runner's workspace (fastest, no quarantine).** The runner is this Mac, so the last CI build is already on disk:
 
 ```bash
+osascript -e 'quit app "WarcraftRecorder"'
+rm -rf ~/Applications/WarcraftRecorder.app   # copying over an old build can leave stale files that break the signature
 ditto ~/code/actions-runner/_work/wow-recorder/wow-recorder/release/build/mac-arm64/WarcraftRecorder.app ~/Applications/WarcraftRecorder.app
 ```
 
