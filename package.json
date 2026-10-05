@@ -103,9 +103,34 @@
     }
   },
   "jest": {
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/src"
+    ],
+    "moduleDirectories": [
+      "node_modules",
+      "src"
+    ],
+    "moduleNameMapper": {
+      "^electron$": "<rootDir>/tests/mocks/electron.ts",
+      "\\.(css|scss|sass)$": "identity-obj-proxy",
+      "^uiohook-napi$": "<rootDir>/tests/mocks/uiohook-napi.ts",
+      "^electron-store$": "<rootDir>/tests/mocks/electron-store.ts"
+    },
     "transform": {
-      "\\.(ts|tsx|js|jsx)$": "ts-jest"
-    }
+      "\\.(ts|tsx|js|jsx)$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "isolatedModules": true
+          }
+        }
+      ]
+    },
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/release/"
+    ]
   },
   "dependencies": {
     "@electron/notarize": "^3.0.0",

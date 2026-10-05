@@ -4,10 +4,10 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Current state
 
-- **Current phase:** 3 (recording backend decision)
-- **Last checkpoint tag:** `macos-port-phase-2` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** no macOS CI workflow yet. Runner smoke test (run 37172369803) green: macOS 27.0.1, Xcode 27.0, SDK 27.0, Node 24.11.1, arm64.
-- **Exact next step:** check the first `macos-ci` run (helper compile, probe, self-test, ffmpeg checks); fix until green; then record the backend decision (D-004).
+- **Current phase:** 4 (macOS MVP implementation)
+- **Last checkpoint tag:** `macos-port-phase-3` (local only; see blocker B-001 and the tag table below)
+- **Latest CI result:** `macos-ci` run 37261237609 (commit 58a5a82) green in 40 s: helper compiles, probe OK, self-test pass (3 recordings verified: durations 5.08/5.07/2.03 s, 6 AAC tracks with expected levels, avc1/hvc1), ffmpeg decodes all.
+- **Exact next step:** phase 4: remove `noobs`, add the TypeScript shim (`src/main/mac/`) that drives `wcr-capture`, wire Recorder to it, then the ps poller, log watcher hardening and unit tests.
 
 ## Phase checklist
 
@@ -22,10 +22,10 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [x] `ANALYSIS.md`
 
 ### Phase 3: recording backend decision
-- [ ] Options evaluated (OBS / ffmpeg / ScreenCaptureKit helper)
-- [ ] macOS CI workflow on self-hosted runner
-- [ ] Spike verified on runner (SDK capabilities, encode pipeline self-test, ffmpeg avfoundation device list)
-- [ ] Decision recorded
+- [x] Options evaluated (OBS / ffmpeg / ScreenCaptureKit helper)
+- [x] macOS CI workflow on self-hosted runner (`macos-ci.yml`)
+- [x] Spike verified on runner (SDK capabilities, encode pipeline self-test, ffmpeg avfoundation device list)
+- [x] Decision recorded (D-004, D-005, D-006)
 
 ### Phase 4: macOS MVP implementation
 - [ ] Quality gates green (tsc, lint, jest)
@@ -51,7 +51,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Last session
 
-- 2026-10-05: phase 1 complete (orientation, baseline measurements, agent files). Phase 2 complete (ANALYSIS.md).
+- 2026-10-05: phases 1-3 complete. Orientation and agent files; ANALYSIS.md; backend decision with the Swift helper green on the runner. Jest config groundwork in progress (Electron, electron-store and uiohook stubs).
 
 ## Open blockers (waiting on owner)
 
@@ -63,13 +63,16 @@ Single source of truth for resuming. Update before every checkpoint commit.
 | Tag | Commit | Pushed |
 | --- | --- | --- |
 | `macos-port-phase-1` | `414af9a` | no (B-001) |
-| `macos-port-phase-2` | see `git log --grep '\[phase-2\] add ANALYSIS'` | no (B-001) |
+| `macos-port-phase-2` | `874fcf2` | no (B-001) |
+| `macos-port-phase-3` | see `git log --grep '\[phase-3\] record backend decision'` | no (B-001) |
 
 ## In-flight experiments
 
-- **E-001: ScreenCaptureKit helper spike** (`native/wcr-capture/`, Swift, built by `native/wcr-capture/build.sh` into `binaries/wcr-capture`). Engine mirrors the noobs replay-buffer model (startBuffer / convert(offset) / stop / forceStop) with VideoToolbox encoding, a six-track mixer, an in-memory 60 s buffer and a fragmented-MP4 AVAssetWriter. `probe` and `selftest` subcommands run in `macos-ci.yml`. Not yet compiled (no Swift toolchain in the cloud container; download.swift.org is blocked by egress policy).
+- None. E-001 (ScreenCaptureKit helper spike) concluded: adopted as the backend (D-004).
 
 ## Verified vs assumed
 
-- Verified: runner toolchain versions (smoke test log). Baseline gate failures (local container run).
-- Assumed: nothing claimed about on-device behavior yet.
+- Verified on the runner: helper compiles against SDK 27; VideoToolbox H.264/HEVC hardware sessions with constant quality; ScreenCaptureKit audio/mic config surface exists; synthetic end-to-end recording (buffer, convert with offset, six-track mix, fragmented MP4, stop/force-stop) produces correct files; ffmpeg-static arm64 decodes them; ffmpeg avfoundation exposes no system audio device.
+- Verified locally: baseline gate failures; jest now loads suites that do not import `noobs`.
+- Assumed (not testable in CI because of TCC): real ScreenCaptureKit capture of the WoW window, system/app audio, microphones; TCC attribution of the helper to the app.
+- Runner facts: two 3440x1440 displays; mics include a BY-PM700 and Realtek USB audio.
