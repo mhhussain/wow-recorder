@@ -94,3 +94,12 @@ test('does not replay an existing log on start, then follows writes', async () =
     await watcher.unwatch();
   }
 });
+
+test('unwatch before watch finishes leaves no watcher behind', async () => {
+  const { watcher } = setup();
+  const watching = watcher.watch();
+  await watcher.unwatch();
+  await watching;
+  expect(watcher['watcher']).toBeUndefined();
+  expect(watcher['pollTimer']).toBeUndefined();
+});

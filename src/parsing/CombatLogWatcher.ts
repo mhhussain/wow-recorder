@@ -47,6 +47,12 @@ export default class CombatLogWatcher extends EventEmitter {
   private pollIntervalMs: number;
 
   /**
+   * Set by unwatch(). watch() is async, so unwatch() can run before it has
+   * created the watcher; this stops it creating one afterwards.
+   */
+  private stopped = false;
+
+  /**
    * We need to keep track of some info about each log file to know how much we
    * should read.
    */
@@ -83,7 +89,13 @@ export default class CombatLogWatcher extends EventEmitter {
    * Start watching the directory.
    */
   public async watch() {
+    this.stopped = false;
     await this.getLogDirectoryState();
+
+    if (this.stopped) {
+      return;
+    }
+
     this.watcher = watch(this.logDir);
 
     this.watcher.on('change', (_type, file) => {
@@ -116,13 +128,16 @@ export default class CombatLogWatcher extends EventEmitter {
    * Stop watching the directory.
    */
   public async unwatch() {
+    this.stopped = true;
+
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = undefined;
     }
 
     if (this.watcher) {
-      await this.watcher.close();
+      this.watcher.close();
+      this.watcher = undefined;
     }
   }
 

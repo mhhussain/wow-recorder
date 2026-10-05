@@ -17,7 +17,6 @@ import {
 } from './obsEnums';
 import {
   deferredPromiseHelper,
-  fixPathWhenPackaged,
   getAssetPath,
   isPushToTalkHotkey,
   convertUioHookEvent,
@@ -62,7 +61,6 @@ import assert from 'assert';
 import { isHighRes } from 'renderer/rendererutils';
 import { ensureInputHook } from './inputHook';
 
-const devMode = process.env.NODE_ENV === 'development';
 const moov = Buffer.from('moov');
 const moof = Buffer.from('moof');
 const mdat = Buffer.from('mdat');
@@ -1201,21 +1199,10 @@ export default class Recorder extends EventEmitter {
     console.info('[Recorder] Initializing OBS');
     const cb = this.handleSignal.bind(this);
 
-    let logPath = devMode
-      ? path.resolve(__dirname, './logs')
-      : path.resolve(__dirname, '../../dist/main/logs');
-
-    let noobsPath = devMode
-      ? path.resolve(__dirname, '../../release/app/node_modules/noobs/dist')
-      : path.resolve(__dirname, '../../node_modules/noobs/dist');
-
-    logPath = fixPathWhenPackaged(logPath);
-    noobsPath = fixPathWhenPackaged(noobsPath);
-
-    console.info('[Recorder] Noobs path:', noobsPath);
-    console.info('[Recorder] Log path:', logPath);
+    // The macOS backend needs no plugin or log paths: the capture helper
+    // logs to stderr, which lands in the application log.
     noobs.onHelperError = (message: string) => emitErrorReport(message);
-    noobs.Init(noobsPath, logPath, cb);
+    noobs.Init('', '', cb);
     noobs.SetBuffering(true);
     noobs.SetFragmentation(true);
 
