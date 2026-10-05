@@ -6,7 +6,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 - **Current phase:** 6 (verification and handoff): fixing on-device findings
 - **Last checkpoint tag:** `macos-port-phase-7-pvp` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** pending for the D-010 commit. Run 37384710524 (4ad186f) failed: the refuted ps truncation test, and the new fixture missing from the runner's sparse checkout (both fixed in D-010). Last green: run 37264835448 (af5550d), but it skipped 30 tests including all PvP scenarios (D-010).
+- **Latest CI result:** run 37385424974 (commit 8ec4ea6) green: typecheck, lint, 77 tests passed (now including the 13 PvP scenarios, the owner's Murder Row log and the real `ps` check; 17 skipped are the full-log fidelity tests whose large logs CI deliberately leaves out), helper probe and self-test, build, package, smoke test PASS, artifact uploaded. Before that, run 37384710524 (4ad186f) failed on the refuted ps assertion and the missing fixture (D-010).
 - **Exact next step:** owner sends the app log covering the failed run (newest file in `~/Library/Logs/WarcraftRecorder/` from 2026-10-05 around 18:2x, or the lines containing `[Manager]`, `[Recorder]`, `[MacNoobs]`, `[Poller]`, `[wcr-capture]`) and, with WoW open, the output of `ps -axo comm= | grep -i warcraft`. Then installs the new build (MANUAL_TEST.md section 1), checks the status shows "Ready to record" with WoW open, and repeats the Mythic+ run (section 6).
 
 ## Phase checklist
