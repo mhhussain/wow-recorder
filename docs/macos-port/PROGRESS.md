@@ -7,7 +7,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - **Current phase:** 3 (recording backend decision)
 - **Last checkpoint tag:** `macos-port-phase-2` (local only; see blocker B-001 and the tag table below)
 - **Latest CI result:** no macOS CI workflow yet. Runner smoke test (run 37172369803) green: macOS 27.0.1, Xcode 27.0, SDK 27.0, Node 24.11.1, arm64.
-- **Exact next step:** phase 3: record the backend decision, add `macos-ci.yml`, build the Swift helper skeleton with a self-test on the runner.
+- **Exact next step:** check the first `macos-ci` run (helper compile, probe, self-test, ffmpeg checks); fix until green; then record the backend decision (D-004).
 
 ## Phase checklist
 
@@ -67,7 +67,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## In-flight experiments
 
-- None.
+- **E-001: ScreenCaptureKit helper spike** (`native/wcr-capture/`, Swift, built by `native/wcr-capture/build.sh` into `binaries/wcr-capture`). Engine mirrors the noobs replay-buffer model (startBuffer / convert(offset) / stop / forceStop) with VideoToolbox encoding, a six-track mixer, an in-memory 60 s buffer and a fragmented-MP4 AVAssetWriter. `probe` and `selftest` subcommands run in `macos-ci.yml`. Not yet compiled (no Swift toolchain in the cloud container; download.swift.org is blocked by egress policy).
 
 ## Verified vs assumed
 

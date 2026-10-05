@@ -40,3 +40,8 @@ buffer
 
 # Some stuff OBS window capture creates at runtime?
 win-capture/
+
+# macOS port: CI tool caches and build outputs
+.ci-cache/
+binaries/wcr-capture
+binaries/ffmpeg

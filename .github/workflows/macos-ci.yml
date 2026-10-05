@@ -1,0 +1,82 @@
+# macOS CI for the personal macOS port. Runs on the owner's Mac.
+#
+# Security rules (mandatory, see CLAUDE.md): self-hosted runner jobs only
+# trigger on push to macos-port and workflow_dispatch; no pull_request,
+# pull_request_target or schedule. No sudo, no system-wide installs, no
+# reads outside the workspace. All tool caches live in .ci-cache/ inside the
+# workspace, which persists between runs because checkout does not clean.
+name: macos-ci
+
+on:
+  push:
+    branches: [macos-port]
+  workflow_dispatch:
+    inputs:
+      clean:
+        description: Wipe the workspace (node_modules, caches) before building
+        type: boolean
+        default: false
+
+concurrency:
+  group: macos-ci
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: [self-hosted, macOS, ARM64, wow-mac]
+    timeout-minutes: 45
+    env:
+      CI_CACHE: ${{ github.workspace }}/.ci-cache
+      npm_config_cache: ${{ github.workspace }}/.ci-cache/npm
+      npm_config_devdir: ${{ github.workspace }}/.ci-cache/node-gyp
+      electron_config_cache: ${{ github.workspace }}/.ci-cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.ci-cache/electron-builder
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: ${{ inputs.clean == true }}
+          fetch-depth: 1
+          filter: blob:none
+          # Skip the ~800 MB of full combat logs; unit tests use excerpts.
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /*
+            !/tests/logs/
+            !/tests/fixtures/combatlogs/
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcrun --show-sdk-version
+          xcrun swiftc --version
+          node -v && npm -v
+
+      - name: Build capture helper
+        run: bash native/wcr-capture/build.sh
+
+      - name: Probe capabilities
+        run: binaries/wcr-capture probe
+
+      - name: Self-test recording pipeline
+        run: |
+          rm -rf "$CI_CACHE/selftest"
+          binaries/wcr-capture selftest "$CI_CACHE/selftest"
+
+      - name: ffmpeg checks
+        run: |
+          mkdir -p "$CI_CACHE/ffmpeg-probe"
+          npm install --no-save --no-audit --no-fund --prefix "$CI_CACHE/ffmpeg-probe" ffmpeg-static@5.3.0 >/dev/null
+          FF="$CI_CACHE/ffmpeg-probe/node_modules/ffmpeg-static/ffmpeg"
+          file "$FF"
+          "$FF" -hide_banner -version | head -1
+          for f in "$CI_CACHE"/selftest/*.mp4; do
+            echo "== $f"
+            "$FF" -hide_banner -i "$f" 2>&1 | grep -E 'Duration|Stream' || true
+            "$FF" -v error -i "$f" -map 0 -f null - && echo "decode OK"
+          done
+          echo "== avfoundation devices (system audio needs a virtual device if none listed)"
+          "$FF" -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true
