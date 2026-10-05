@@ -6,8 +6,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 - **Current phase:** 4 (macOS MVP implementation)
 - **Last checkpoint tag:** `macos-port-phase-3` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** run 37262825992 (commit 2418558) red at `npm ci`: electron-rebuild could not map Electron 44.4.5 to an ABI with node-abi 4.31.0. Fixed in the next commit (node-abi 4.36.0). Last green: run 37261237609 (helper spike).
-- **Exact next step:** confirm CI green with the node-abi fix; then LogHandler state-machine tests driven by fixture excerpts (raids, M+) with a mocked recorder.
+- **Latest CI result:** run 37263053998 (commit 9a12244) green in 1.5 min: npm ci, typecheck, lint, unit tests (incl. log watcher on FSEvents), native build, helper probe + self-test, webpack build.
+- **Exact next step:** Windows-only removals and macOS behaviours: first-run WoW folder discovery under /Applications, shell.showItemInFolder, drop AppUpdater, lazy/guarded uiohook start, microphone/screen permission handling, relaxed .flavor.info check.
 
 ## Phase checklist
 
