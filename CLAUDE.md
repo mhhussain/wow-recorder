@@ -106,6 +106,8 @@ Kept current as work lands. See DECISIONS.md for reasoning.
 - `uIOhook.start()` at launch: now `src/main/inputHook.ts`, started only for push to talk, manual hotkey or hotkey binding (needs Accessibility on macOS).
 - Windows WoW install search paths and `explorer.exe`: replaced with /Applications discovery and Finder (`shell.showItemInFolder` / `openPath`).
 
+Gotcha: BSD `ps` without a terminal (the packaged app, CI) cuts its last column at 79 characters; always pass `-ww` (D-009).
+
 Gotcha: never run `prettier --write` on whole directories. `RetailLogHandler.ts` and friends disable Prettier for their handler tables via eslint comments, which Prettier itself ignores.
 
 ## Fixture handling rules

@@ -1090,8 +1090,22 @@ export default class Recorder extends EventEmitter {
     }
 
     if (this.obsState !== ERecordingState.Recording) {
-      console.error('[Recorder] Buffer not started');
-      throw new Error('Buffer not started');
+      // Upstream drops the activity here. The combat log is being written,
+      // so WoW is running: the buffer is down because WoW was not detected
+      // or the capture helper restarted. Start it now and record from here
+      // rather than lose the whole activity.
+      console.warn('[Recorder] Buffer not running, starting it now');
+
+      emitErrorReport(
+        'The recorder was not running when this activity started, so the start of the video is missing. If the status did not show "Ready to record" while WoW was open, share the app log.',
+      );
+
+      if (this.audioSources.length === 0) {
+        // WoW was never detected, so its audio sources were never attached.
+        this.configureAudioSources(getObsAudioConfig(this.cfg));
+      }
+
+      await this.startObsBuffer();
     }
 
     // The native code expects an integer.
@@ -1264,6 +1278,12 @@ export default class Recorder extends EventEmitter {
         if (signal.code !== 0 && this.failPendingStart) {
           this.failPendingStart(
             new Error(signal.error || 'Recorder failed to start'),
+          );
+        } else if (signal.code !== 0) {
+          // Nobody is waiting on this (the helper died, or its automatic
+          // restart failed), so say so rather than drop the buffer silently.
+          emitErrorReport(
+            `Recording stopped unexpectedly: ${signal.error || signal.code}`,
           );
         }
 

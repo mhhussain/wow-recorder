@@ -22,8 +22,17 @@ const classicFolders = [
 ];
 
 /**
- * Decide which WoW flavours are running from `ps -axo comm=` output (one
- * executable path per line). Exported for tests.
+ * Process listing command. `-ww` matters: without a terminal (the packaged
+ * app, CI) BSD ps cuts its last column at 79 characters, which turns
+ *   /Applications/World of Warcraft/_retail_/World of Warcraft.app/Contents/MacOS/World of Warcraft
+ * into ".../Contents/MacOS/W" and WoW is never detected.
+ */
+export const psCommand = '/bin/ps';
+export const psArgs = ['-axww', '-o', 'comm='];
+
+/**
+ * Decide which WoW flavours are running from `ps -axww -o comm=` output
+ * (one executable path per line). Exported for tests.
  */
 export const parseWowProcesses = (psOutput: string): WowProcessState => {
   const state: WowProcessState = { Retail: false, Classic: false };
@@ -32,8 +41,10 @@ export const parseWowProcesses = (psOutput: string): WowProcessState => {
     const exe = raw.trim();
     const name = exe.split('/').pop() ?? '';
 
+    // ps reports argv[0], normally the full path; a launcher may pass a
+    // bare name instead, which still identifies the client.
     const isClient =
-      exe.includes('.app/Contents/MacOS/') &&
+      (exe.includes('.app/Contents/MacOS/') || !exe.includes('/')) &&
       name.startsWith('World of Warcraft') &&
       !/helper|launcher|crash|error/i.test(name);
 
@@ -55,6 +66,16 @@ export const parseWowProcesses = (psOutput: string): WowProcessState => {
 
   return state;
 };
+
+/**
+ * Lines that look WoW related, for diagnosing a client the parser does not
+ * recognise.
+ */
+const wowLikeProcesses = (psOutput: string) =>
+  psOutput
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /warcraft/i.test(l) && !l.includes('WarcraftRecorder'));
 
 /**
  * The Poller singleton periodically checks the list of WoW active
@@ -94,6 +115,11 @@ export default class Poller extends EventEmitter {
   private pollIntervalMs = 2000;
 
   /**
+   * Last process snapshot logged, to log changes only.
+   */
+  private lastLogged = '';
+
+  /**
    * Create or get the singleton.
    */
   static getInstance() {
@@ -123,6 +149,7 @@ export default class Poller extends EventEmitter {
     console.info('[Poller] Stop process poller');
     this.wowRunning = false;
     this.polling = false;
+    this.lastLogged = '';
 
     if (this.timer) {
       clearInterval(this.timer);
@@ -154,8 +181,8 @@ export default class Poller extends EventEmitter {
     }
 
     execFile(
-      'ps',
-      ['-axo', 'comm='],
+      psCommand,
+      psArgs,
       { maxBuffer: 4 * 1024 * 1024 },
       (error, stdout) => {
         if (error) {
@@ -163,9 +190,23 @@ export default class Poller extends EventEmitter {
           return;
         }
 
-        this.handleProcessState(parseWowProcesses(stdout));
+        const state = parseWowProcesses(stdout);
+        this.logSnapshot(state, wowLikeProcesses(stdout));
+        this.handleProcessState(state);
       },
     );
+  }
+
+  /**
+   * Log what was detected whenever it changes, including WoW-like processes
+   * that were not recognised as a client.
+   */
+  private logSnapshot(state: WowProcessState, candidates: string[]) {
+    const snapshot = JSON.stringify({ ...state, candidates });
+    if (snapshot === this.lastLogged) return;
+    this.lastLogged = snapshot;
+
+    console.info('[Poller] WoW processes', snapshot);
   }
 
   /**

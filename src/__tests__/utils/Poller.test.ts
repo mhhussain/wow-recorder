@@ -1,4 +1,4 @@
-import Poller, { parseWowProcesses } from '../../utils/Poller';
+import Poller, { parseWowProcesses, psArgs } from '../../utils/Poller';
 import ConfigService from '../../config/ConfigService';
 import { WowProcessEvent } from '../../main/types';
 
@@ -36,6 +36,22 @@ test('falls back to the app name for non-standard install folders', () => {
     Retail: false,
     Classic: true,
   });
+});
+
+test('accepts a bare client name and rejects a truncated path', () => {
+  expect(parseWowProcesses('World of Warcraft')).toEqual({
+    Retail: true,
+    Classic: false,
+  });
+
+  // What `ps -axo comm=` printed without a terminal: the path cut at 79
+  // characters. psArgs must ask for unlimited width (-ww).
+  const truncated = app('_retail_', 'World of Warcraft').slice(0, 79);
+  expect(parseWowProcesses(truncated)).toEqual({
+    Retail: false,
+    Classic: false,
+  });
+  expect(psArgs[0]).toMatch(/^-[a-z]*ww/);
 });
 
 test('ignores helpers, launchers and look-alikes', () => {

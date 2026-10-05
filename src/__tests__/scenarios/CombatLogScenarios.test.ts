@@ -267,6 +267,29 @@ describe('retail mythic+', () => {
     ]);
   });
 
+  test('Mac client log (format 22): key start records, zoning out keeps it', async () => {
+    // The owner's first on-device run. The key starts 12 s into the log
+    // (after a stray CHALLENGE_MODE_END), the group leaves for Silvermoon
+    // 70 s later and the log ends there. As upstream, leaving the instance
+    // does not end the run, so it is still recording at the end.
+    const videos = await play(
+      'retail',
+      'mplus_started_then_zoned_out_mac_client',
+      'combatlogs',
+    );
+
+    expect(videos).toEqual([]);
+    expect(method('startRecording')).toHaveLength(1);
+    expect(method('stop')).toHaveLength(0);
+    expect(LogHandler.activity?.category).toBe('Mythic+');
+
+    // WoW closing (or a force stop) then saves it as abandoned.
+    await LogHandler.forceEndActivity();
+    expect(names(queue.queued)).toEqual([
+      'Rainbowlight - Murder Row +11 (Abandoned)',
+    ]);
+  });
+
   test('keys below the minimum level are not recorded', async () => {
     ConfigService.getInstance().set('minKeystoneLevel', 11);
 

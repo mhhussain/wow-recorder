@@ -102,7 +102,7 @@ launchctl unsetenv WCR_FAKE_WOW
 
 ## 5. Real raid encounter
 
-1. Launch WoW (Retail) with combat logging on. Status changes to "Ready to record" within a few seconds (the buffer is running).
+1. Launch WoW (Retail) with combat logging on. Status changes to "Ready to record" within a few seconds (the buffer is running). If it stays at "Waiting for WoW", WoW was not detected: recordings will still be made, but they start late and an error report says so. Send the `[Poller] WoW processes` lines from the log (section 9).
 2. Pull a raid boss (LFR is fine). Status changes to Recording when the combat log shows ENCOUNTER_START (can lag the pull by a few seconds; the recording still starts from the pull because it cuts back into the buffer).
 3. Kill or wipe. After ENCOUNTER_END plus the overrun (15 s on a kill, 3 s on a wipe) the video is saved.
 
@@ -141,7 +141,8 @@ open track1-all.m4a track2-mic.m4a
 
 | Symptom | Check |
 | --- | --- |
-| Status never leaves "Waiting for WoW" | WoW must be the Retail client under `_retail_` (or Classic under `_classic_*`). Logs show `[Poller]` lines. |
+| Status never leaves "Waiting for WoW" | WoW must be the Retail client under `_retail_` (or Classic under `_classic_*`). The log has a `[Poller] WoW processes {...}` line each time detection changes; `candidates` lists WoW-like processes that were not recognised. Send that line. |
+| Error report "The recorder was not running when this activity started" | Same cause as above (WoW not detected), or the capture helper had just restarted (an earlier "Recording stopped unexpectedly" report). The video is kept but misses its first seconds. |
 | Error report about Screen Recording | Section 2, reset and re-grant, relaunch. |
 | Video is black | Screen Recording not effective (section 2), or WoW window not found: logs show `WoW window not found yet`. Try Monitor capture. |
 | No game audio | Screen Recording covers system audio; reset and re-grant. If using an Application source, pick "World of Warcraft (any client)". |

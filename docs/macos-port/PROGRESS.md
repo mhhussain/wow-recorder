@@ -4,10 +4,10 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Current state
 
-- **Current phase:** 6 (verification and handoff): waiting on the owner's on-device test (MANUAL_TEST.md)
+- **Current phase:** 6 (verification and handoff): fixing on-device findings
 - **Last checkpoint tag:** `macos-port-phase-7-pvp` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** run 37264835448 (commit af5550d) green in 100 s: typecheck, lint, unit tests incl. shim-to-helper integration and 13 PvP scenarios, helper probe + self-test, webpack build, package, signature/Info.plist/binary checks, packaged-app boot smoke test (PASS: helper running, encoders listed, renderer drew UI), artifact `WarcraftRecorder-macos-arm64-af5550d…` (artifact 11325693053, expires 2026-10-12).
-- **Exact next step:** owner runs `docs/macos-port/MANUAL_TEST.md` (start with section 4, the fake-WoW smoke test) and reports results plus the newest log from `~/Library/Logs/WarcraftRecorder/`. Agent then fixes whatever on-device testing finds; likely first suspects are listed under "Not verified" below.
+- **Latest CI result:** pending for the D-009 fix commit (previous: run 37264835448 on af5550d, green).
+- **Exact next step:** owner installs the new build (MANUAL_TEST.md section 1; re-grant permissions if capture fails, section 2), opens WoW and confirms the status shows "Ready to record", then repeats the Mythic+ run (section 6). Send the newest log from `~/Library/Logs/WarcraftRecorder/` either way.
 
 ## Phase checklist
 
@@ -48,6 +48,9 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [ ] On-device verification by the owner (MANUAL_TEST.md results checklist)
 - [x] Final status report (end of session 1, below)
 
+### On-device findings (owner)
+- [x] 2026-10-05 Mythic+ (Murder Row +11): error "Buffer not started" at CHALLENGE_MODE_START, no video. Cause: WoW never detected because `ps` truncated the client path at 79 columns without a terminal. Fixed (D-009): `ps -ww`, detection logging, a fallback that starts the buffer at activity start instead of dropping the run, and reports for unexpected buffer loss. Log kept as a fixture with a scenario test. Awaiting the owner's re-test.
+
 ### Phase 7 (optional, after MVP)
 - [x] Classic and Era: free (D-006); scenario tests pass for Classic raid, MoP challenge mode, Era raid
 - [x] PvP triggers: code unchanged and platform-agnostic; 13 scenario tests on the real PvP fixture logs (Retail 2v2/3v3/skirmish/wargame/solo shuffle/rated BG/AFK-out, Classic 2v2/3v3/5v5/BG/extra units/feign death) match upstream's expected outcomes
@@ -61,6 +64,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
   - Tests: 70 jest tests incl. 18 scenario tests on real log excerpts (raids, M+, Classic, Era) and full-log fidelity tests.
   - CI: one workflow, 84 s warm, produces a signed arm64 app artifact.
   - Found and fixed along the way: Electron 44 ABI unknown to node-abi 4.31 (CI npm ci), FSEvents watcher leak hanging Jest on macOS, logs written inside the signed bundle, upstream tests stale (wrong constructor arity, hardcoded year).
+
+- 2026-10-05 (session 1, continued): owner's first on-device Mythic+ run failed ("Buffer not started"); root cause and fix in D-009. Tests: 95 (89 run on Linux; 6 macOS-only: helper integration and real `ps` width checks).
 
 ## Open blockers (waiting on owner)
 
