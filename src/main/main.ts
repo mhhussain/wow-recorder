@@ -44,7 +44,15 @@ import Recorder from './Recorder';
 import AsyncQueue from 'utils/AsyncQueue';
 import { getApplicationLogDir, setupApplicationLogging } from './logging';
 import { ensureInputHook, stopInputHook } from './inputHook';
+import {
+  finishSmokeTest,
+  isSmokeTest,
+  prepareSmokeTest,
+  watchSmokeTestWindow,
+} from './smokeTest';
 
+// Before anything reads app paths (CI boot check only, see smokeTest.ts).
+prepareSmokeTest();
 setupApplicationLogging();
 const appVersion = app.getVersion();
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -73,7 +81,7 @@ const cfg = ConfigService.getInstance();
 // shown yet so they can't have opened the settings.
 const firstTimeSetup = cfg.get<boolean>('firstTimeSetup');
 
-if (firstTimeSetup) {
+if (firstTimeSetup && !isSmokeTest()) {
   // Things we want to do before we initialize OBS.
   console.info('[Main] Run first time setup actions');
   runFirstTimeSetupActionsNoObs();
@@ -215,11 +223,15 @@ const createWindow = async () => {
   // Prevent Windows from opening the native window menu on draggable regions.
   window.on('system-context-menu', (event) => event.preventDefault());
 
+  if (isSmokeTest()) {
+    watchSmokeTestWindow(window);
+  }
+
   // We need to do this AFTER creating the window as it's used by the preview.
   Recorder.getInstance().initializeObs();
   await manager.startup();
 
-  if (firstTimeSetup) {
+  if (firstTimeSetup && !isSmokeTest()) {
     console.info('[Main] Run first time setup actions');
     runFirstTimeSetupActionsObs();
     cfg.set('firstTimeSetup', false);
@@ -248,7 +260,7 @@ const createWindow = async () => {
     );
 
     const startMinimized = cfg.get<boolean>('startMinimized');
-    if (!startMinimized) window.show();
+    if (!startMinimized && !isSmokeTest()) window.show();
 
     // Important to refresh status and videos after a user triggered
     // refresh, otherwise the frontend will be in its default state
@@ -280,6 +292,22 @@ const createWindow = async () => {
   });
 
   await window.loadURL(resolveHtmlPath('index.html'));
+
+  if (isSmokeTest()) {
+    // No tray, input hook or permission requests in the CI boot check.
+    finishSmokeTest(window, async () => {
+      const recorder = Recorder.getInstance();
+
+      return {
+        obsInitialized: recorder.obsInitialized,
+        backendRunning: recorder.isBackendRunning(),
+        encoders: recorder.getAvailableEncoders(),
+      };
+    });
+
+    return;
+  }
+
   setupTray();
 
   // Open urls in the user's browser

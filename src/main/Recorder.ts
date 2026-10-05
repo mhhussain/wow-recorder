@@ -957,6 +957,13 @@ export default class Recorder extends EventEmitter {
   }
 
   /**
+   * Whether the capture helper process is up.
+   */
+  public isBackendRunning() {
+    return noobs.IsHelperRunning();
+  }
+
+  /**
    * Trigger the macOS Screen Recording permission prompt.
    */
   public requestScreenAccess() {

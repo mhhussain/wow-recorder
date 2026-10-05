@@ -62,3 +62,11 @@ Each entry: date, context, options considered, choice, reasoning. Never edit pas
   - CI zips the app with `ditto -c -k --keepParent` (keeps framework symlinks and executable bits that a plain directory artifact upload would lose) and uploads it with 7-day retention.
 - Consequence: TCC identifies ad-hoc signed apps by code hash, so each new build may need Screen Recording and Microphone re-granted (see MANUAL_TEST.md). A self-signed certificate would make grants stable but requires a keychain change on the owner's Mac; offered as an option, not done.
 - Logs: application logs move from inside the bundle to `~/Library/Logs/WarcraftRecorder` (writing into a signed bundle breaks its seal and fails under /Applications).
+
+## D-008 (2026-10-05) CI boot smoke test and helper integration test
+
+- Context: real capture is TCC-gated, but two failure modes are testable without permissions: a mismatch between the TypeScript `configure` JSON and the Swift `EngineConfig`, and a packaged app that crashes on boot.
+- Choice:
+  - `src/__tests__/mac/HelperIntegration.test.ts` drives the real `binaries/wcr-capture` through `CaptureHelper` and `MacNoobs` with no capture sources (black frames, silent tracks), checks signals, file naming, and the file (1 H.264 + 6 AAC streams, expected duration). Runs on macOS after `npm run build:native`; skipped elsewhere.
+  - `WCR_SMOKE_TEST=<dir>` boots the packaged app hidden, with user data and logs under `<dir>`, no Dock icon, tray, permission requests, first-run setup or WoW polling, then exits 0/1 based on uncaught errors, renderer load/crash, rendered content, helper running and encoder listing.
+- Side effects on the runner Mac: none requested by the app. AppKit/Chromium may still write small per-app state for the bundle ID `org.WarcraftRecorder` under `~/Library` (for example Saved Application State); the app itself requests no permissions in this mode.

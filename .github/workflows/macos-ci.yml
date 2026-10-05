@@ -10,6 +10,10 @@ name: macos-ci
 on:
   push:
     branches: [macos-port]
+    # Docs-only pushes do not need the runner.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
     inputs:
       clean:
@@ -74,12 +78,12 @@ jobs:
         timeout-minutes: 5
         run: npm run lint
 
-      - name: Unit tests
-        timeout-minutes: 5
-        run: npm test
-
       - name: Build native binaries (capture helper, ffmpeg)
         run: npm run build:native
+
+      - name: Unit tests (includes shim-to-helper integration)
+        timeout-minutes: 5
+        run: npm test
 
       - name: Capture helper probe and self-test
         timeout-minutes: 5
@@ -113,6 +117,19 @@ jobs:
           rm -f release/build/WarcraftRecorder-macos-arm64.zip
           ditto -c -k --keepParent "$APP" release/build/WarcraftRecorder-macos-arm64.zip
           ls -lh release/build/WarcraftRecorder-macos-arm64.zip
+
+      - name: Boot smoke test (packaged app, no permission requests)
+        timeout-minutes: 3
+        run: |
+          # See src/main/smokeTest.ts: hidden window, user data and logs in the
+          # workspace, no prompts, no WoW polling; exits 0 when the app boots.
+          rm -rf "$CI_CACHE/smoke"
+          if ! WCR_SMOKE_TEST="$CI_CACHE/smoke" release/build/mac-arm64/WarcraftRecorder.app/Contents/MacOS/WarcraftRecorder > "$CI_CACHE/smoke-stdout.txt" 2>&1; then
+            echo "Smoke test failed. App log:"
+            tail -n 200 "$CI_CACHE"/smoke/logs/*.log || tail -n 200 "$CI_CACHE/smoke-stdout.txt"
+            exit 1
+          fi
+          grep -h "SmokeTest\|CaptureHelper\|\[wcr-capture\]" "$CI_CACHE"/smoke/logs/*.log | tail -n 40
 
       - name: Upload app
         uses: actions/upload-artifact@v4

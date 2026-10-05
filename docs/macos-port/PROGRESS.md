@@ -7,7 +7,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - **Current phase:** 6 (verification and handoff): waiting on the owner's on-device test (MANUAL_TEST.md)
 - **Last checkpoint tag:** `macos-port-phase-5` (local only; see blocker B-001 and the tag table below)
 - **Latest CI result:** run 37264154520 (commit 0601506) green in 84 s: typecheck, lint, 52 unit tests (17 full-log tests skipped by design), helper build + probe + self-test, webpack build, package, signature/Info.plist/binary checks, artifact `WarcraftRecorder-macos-arm64-0601506…` (161 MB zip, artifact 11325498319, expires after 7 days).
-- **Exact next step:** owner runs `docs/macos-port/MANUAL_TEST.md` on the Mac and reports results/logs. Agent meanwhile: optional phase 7 (PvP scenario tests from the existing fixtures). Then fix whatever on-device testing finds.
+- **Exact next step:** confirm the CI run with the shim-to-helper integration test and the packaged-app boot smoke test is green (if the runner cannot host a hidden Electron window, record that and drop or gate the smoke step). Then wait for the owner's MANUAL_TEST.md results.
 
 ## Phase checklist
 

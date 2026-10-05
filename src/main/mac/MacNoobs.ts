@@ -184,6 +184,10 @@ export default class MacNoobs {
     this.markDirty();
   }
 
+  public IsHelperRunning() {
+    return this.opts.transport.isRunning();
+  }
+
   public Shutdown() {
     this.shuttingDown = true;
     this.flushConfig();
