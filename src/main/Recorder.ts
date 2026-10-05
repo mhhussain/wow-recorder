@@ -60,6 +60,7 @@ import Poller from 'utils/Poller';
 import AsyncQueue from 'utils/AsyncQueue';
 import assert from 'assert';
 import { isHighRes } from 'renderer/rendererutils';
+import { ensureInputHook } from './inputHook';
 
 const devMode = process.env.NODE_ENV === 'development';
 const moov = Buffer.from('moov');
@@ -898,6 +899,7 @@ export default class Recorder extends EventEmitter {
     }
 
     if (config.pushToTalk) {
+      ensureInputHook(emitErrorReport);
       this.inputDevicesMuted = true;
 
       this.pushToTalkKeyListener = (e: UiohookKeyboardEvent) =>
@@ -954,6 +956,13 @@ export default class Recorder extends EventEmitter {
     noobs.Shutdown();
     this.obsInitialized = false;
     console.info('[Recorder] OBS shut down successfully');
+  }
+
+  /**
+   * Trigger the macOS Screen Recording permission prompt.
+   */
+  public requestScreenAccess() {
+    noobs.RequestScreenAccess();
   }
 
   /**

@@ -1,3 +1,4 @@
+import CoreGraphics
 import CoreMedia
 import Foundation
 
@@ -100,6 +101,14 @@ final class Engine {
       return Devices.list()
 
     case "permissions":
+      return Devices.permissions()
+
+    case "requestScreenAccess":
+      // Shows the system prompt (attributed to the parent app) the first
+      // time; afterwards it is a no-op and the user must use System Settings.
+      if !CGPreflightScreenCaptureAccess() {
+        _ = CGRequestScreenCaptureAccess()
+      }
       return Devices.permissions()
 
     case "status":

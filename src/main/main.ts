@@ -9,9 +9,10 @@ import {
   Menu,
   clipboard,
   protocol,
+  nativeImage,
+  systemPreferences,
 } from 'electron';
 import os from 'os';
-import { uIOhook } from 'uiohook-napi';
 import assert from 'assert';
 import { getLocalePhrase, Language } from 'localisation/translations';
 import {
@@ -23,11 +24,17 @@ import {
   runFirstTimeSetupActionsObs,
   runFirstTimeSetupActionsNoObs,
   createDiagsBundle,
+  emitErrorReport,
 } from './util';
-import { OurDisplayType, SoundAlerts, VideoPlayerSettings } from './types';
+import {
+  AudioSource,
+  AudioSourceType,
+  OurDisplayType,
+  SoundAlerts,
+  VideoPlayerSettings,
+} from './types';
 import ConfigService from '../config/ConfigService';
 import Manager from './Manager';
-import AppUpdater from './AppUpdater';
 import MenuBuilder from './menu';
 import { Phrase } from 'localisation/phrases';
 import CloudClient from 'storage/CloudClient';
@@ -36,6 +43,7 @@ import Poller from 'utils/Poller';
 import Recorder from './Recorder';
 import AsyncQueue from 'utils/AsyncQueue';
 import { getApplicationLogDir, setupApplicationLogging } from './logging';
+import { ensureInputHook, stopInputHook } from './inputHook';
 
 setupApplicationLogging();
 const appVersion = app.getVersion();
@@ -139,7 +147,12 @@ const installExtensions = async () => {
  * Setup tray icon, menu and event listeners.
  */
 const setupTray = () => {
-  tray = new Tray(getAssetPath('./icon/small-icon.png'));
+  // Menu bar icons are ~18pt tall on macOS.
+  const icon = nativeImage
+    .createFromPath(getAssetPath('./icon/small-icon.png'))
+    .resize({ width: 18, height: 18 });
+
+  tray = new Tray(icon);
 
   // This wont update without an app restart but whatever.
   const language = cfg.get<string>('language') as Language;
@@ -275,11 +288,50 @@ const createWindow = async () => {
     return { action: 'deny' };
   });
 
-  uIOhook.start();
+  // The global input hook needs the Accessibility permission on macOS, so
+  // only start it when a feature that uses it is enabled.
+  if (cfg.get<boolean>('pushToTalk') || cfg.get<boolean>('manualRecord')) {
+    ensureInputHook(emitErrorReport);
+  }
 
-  // Runs the auto-updater, which checks GitHub for new releases
-  // and will prompt the user if any are available.
-  new AppUpdater(window);
+  // No auto-update in this fork: upstream's updater would check upstream's
+  // Windows releases.
+
+  // Give the renderer a moment to subscribe to error reports.
+  setTimeout(() => checkMediaAccess(), 3000);
+};
+
+/**
+ * Ask for microphone access up front (the prompt is attributed to this app)
+ * and tell the user if Screen Recording, which ScreenCaptureKit needs for
+ * both video and system audio, has not been granted yet. The capture helper
+ * raises the Screen Recording prompt itself the first time it starts.
+ */
+const checkMediaAccess = async () => {
+  const mic = systemPreferences.getMediaAccessStatus('microphone');
+  const screen = systemPreferences.getMediaAccessStatus('screen');
+  console.info('[Main] Media access status', { mic, screen });
+
+  const wantsMic = cfg
+    .get<AudioSource[]>('audioSources')
+    .some((src) => src.type === AudioSourceType.INPUT);
+
+  if (wantsMic && mic === 'not-determined') {
+    const granted = await systemPreferences.askForMediaAccess('microphone');
+    console.info('[Main] Microphone access granted:', granted);
+  } else if (wantsMic && mic !== 'granted') {
+    emitErrorReport(
+      'Microphone access is not allowed for Warcraft Recorder. Enable it in System Settings > Privacy & Security > Microphone.',
+    );
+  }
+
+  if (screen !== 'granted') {
+    Recorder.getInstance().requestScreenAccess();
+
+    emitErrorReport(
+      'Warcraft Recorder needs Screen & System Audio Recording permission to record video and game audio. Enable it in System Settings > Privacy & Security > Screen & System Audio Recording, then restart Warcraft Recorder.',
+    );
+  }
 };
 
 /**
@@ -513,7 +565,7 @@ app.on('before-quit', () => {
   }
 
   Poller.getInstance().stop();
-  uIOhook.stop();
+  stopInputHook();
   Recorder.getInstance().shutdownOBS();
 });
 

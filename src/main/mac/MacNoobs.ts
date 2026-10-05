@@ -354,6 +354,14 @@ export default class MacNoobs {
     }
   }
 
+  /**
+   * Ask macOS for Screen Recording access, so the app shows up in System
+   * Settings before WoW is first launched.
+   */
+  public RequestScreenAccess() {
+    this.command('requestScreenAccess');
+  }
+
   public async RefreshDevices() {
     try {
       this.devices = await this.opts.transport.listDevices();

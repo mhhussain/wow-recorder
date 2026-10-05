@@ -7,7 +7,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - **Current phase:** 4 (macOS MVP implementation)
 - **Last checkpoint tag:** `macos-port-phase-3` (local only; see blocker B-001 and the tag table below)
 - **Latest CI result:** run 37263053998 (commit 9a12244) green in 1.5 min: npm ci, typecheck, lint, unit tests (incl. log watcher on FSEvents), native build, helper probe + self-test, webpack build.
-- **Exact next step:** Windows-only removals and macOS behaviours: first-run WoW folder discovery under /Applications, shell.showItemInFolder, drop AppUpdater, lazy/guarded uiohook start, microphone/screen permission handling, relaxed .flavor.info check.
+- **Exact next step:** check CI for the macOS-behaviours commit; then phase 5: electron-builder mac arm64 config (Info.plist usage strings, ad-hoc signing, helper + ffmpeg in Resources/binaries), CI package step and artifact upload.
 
 ## Phase checklist
 
@@ -31,12 +31,12 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [x] Quality gates green locally (tsc 0 errors, lint 0 errors, jest 27 tests)
 - [x] `noobs` removed; `MacNoobs` shim + `CaptureHelper` client wired into Recorder (fail-fast start errors, VideoToolbox encoders and quality mapping); shim unit tests
 - [ ] Unit tests: log parsing and start/stop state machine for raids and M+ using real fixtures and a mocked recorder
-- [ ] Log folder discovery
+- [x] Log folder discovery (first run checks /Applications and ~/Applications for `World of Warcraft/_retail_|_classic_/Logs`; default storage ~/Movies/Warcraft Recorder; missing `.flavor.info` accepted)
 - [x] Robust log tailing on macOS (stat-driven reads, inode/truncation detection, partial-line carry-over, 1 s poll backstop; tests)
 - [x] WoW process detection (`ps` poller, flavour by install folder, WCR_FAKE_WOW for testing; tests)
-- [ ] Recorder backend wired to existing settings (video + audio)
-- [ ] Permission handling (screen recording, microphone)
-- [ ] Windows-only features disabled or removed
+- [x] Recorder backend wired to existing settings (resolution, FPS, encoder, quality, capture mode, monitor, cursor, audio sources with device/volume/tracks, force mono, suppression, push to talk)
+- [x] Permission handling: mic requested via Electron at startup when a mic source exists; Screen Recording requested via the helper (CGRequestScreenCaptureAccess) and explained in the UI error report; backend start failures surface immediately
+- [x] Windows-only features disabled or removed: AppUpdater, explorer.exe, rust-ps.exe, Windows search paths, unconditional uiohook start (now lazy and guarded, needs Accessibility), tray icon sized for the menu bar
 
 ### Phase 5: build
 - [ ] electron-builder arm64 `.app`, Info.plist usage strings, ad-hoc signing

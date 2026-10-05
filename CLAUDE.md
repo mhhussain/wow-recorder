@@ -100,6 +100,11 @@ Kept current as work lands. See DECISIONS.md for reasoning.
 - Window-finding/attach polling in `Recorder` (`[Wow.exe]` window names): replaced; the helper finds and follows the WoW window.
 - `src/renderer/CrashStatus.tsx`: deleted (dead file importing a type that no longer exists).
 - Native preview and scene editor: shim accepts the calls and does nothing (no macOS preview, D-004).
+- `AppUpdater` (electron-updater against upstream's Windows releases): removed.
+- `uIOhook.start()` at launch: now `src/main/inputHook.ts`, started only for push to talk, manual hotkey or hotkey binding (needs Accessibility on macOS).
+- Windows WoW install search paths and `explorer.exe`: replaced with /Applications discovery and Finder (`shell.showItemInFolder` / `openPath`).
+
+Gotcha: never run `prettier --write` on whole directories. `RetailLogHandler.ts` and friends disable Prettier for their handler tables via eslint comments, which Prettier itself ignores.
 
 ## Fixture handling rules
 
