@@ -68,27 +68,14 @@
     "productName": "WarcraftRecorder",
     "appId": "org.WarcraftRecorder",
     "asar": true,
-    "asarUnpack": "**\\**",
+    "asarUnpack": [
+      "**/*.node"
+    ],
     "files": [
       "dist",
       "node_modules",
       "package.json"
     ],
-    "nsis": {
-      "oneClick": true,
-      "include": "installer.nsh",
-      "deleteAppDataOnUninstall": true
-    },
-    "win": {
-      "icon": "assets/icon.png",
-      "signtoolOptions": {
-        "certificateSubjectName": "Warcraft Recorder LTD"
-      },
-      "artifactName": "WarcraftRecorder-Setup-${version}.exe",
-      "target": [
-        "nsis"
-      ]
-    },
     "directories": {
       "app": "release/app",
       "buildResources": "assets",
@@ -98,11 +85,28 @@
       "./assets/**",
       "./binaries/*"
     ],
-    "publish": {
-      "provider": "github",
-      "owner": "aza547",
-      "repo": "wow-recorder"
-    }
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.video",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Warcraft Recorder records your microphone together with your gameplay.",
+        "NSAudioCaptureUsageDescription": "Warcraft Recorder records game and system audio together with your gameplay.",
+        "NSScreenCaptureUsageDescription": "Warcraft Recorder records the World of Warcraft window or your display.",
+        "LSMinimumSystemVersion": "27.0"
+      }
+    },
+    "afterPack": ".erb/scripts/adhoc-sign.js"
   },
   "jest": {
     "testEnvironment": "node",

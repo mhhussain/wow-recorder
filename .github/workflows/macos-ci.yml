@@ -27,7 +27,7 @@ permissions:
 jobs:
   build:
     runs-on: [self-hosted, macOS, ARM64, wow-mac]
-    timeout-minutes: 45
+    timeout-minutes: 30
     env:
       CI_CACHE: ${{ github.workspace }}/.ci-cache
       npm_config_cache: ${{ github.workspace }}/.ci-cache/npm
@@ -67,18 +67,22 @@ jobs:
           fi
 
       - name: Typecheck
+        timeout-minutes: 5
         run: npm run typecheck
 
       - name: Lint
+        timeout-minutes: 5
         run: npm run lint
 
       - name: Unit tests
+        timeout-minutes: 5
         run: npm test
 
       - name: Build native binaries (capture helper, ffmpeg)
         run: npm run build:native
 
       - name: Capture helper probe and self-test
+        timeout-minutes: 5
         run: |
           binaries/wcr-capture probe
           rm -rf "$CI_CACHE/selftest"
@@ -90,3 +94,31 @@ jobs:
 
       - name: Build app bundles
         run: npm run build
+
+      - name: Package app (arm64, ad-hoc signed)
+        run: npx electron-builder build --mac --arm64 --publish never
+
+      - name: Verify package
+        run: |
+          APP="release/build/mac-arm64/WarcraftRecorder.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | grep -E "^(Identifier|Format|Signature)"
+          plutil -p "$APP/Contents/Info.plist" | grep -E "CFBundleIdentifier|UsageDescription|LSMinimumSystemVersion"
+          ls -l "$APP/Contents/Resources/binaries"
+          "$APP/Contents/Resources/binaries/wcr-capture" list > /dev/null && echo "helper runs from the bundle"
+          "$APP/Contents/Resources/binaries/ffmpeg" -hide_banner -version | head -1
+          find "$APP/Contents/Resources/app.asar.unpacked" -name "*.node" -exec file {} \;
+          # ditto keeps the framework symlinks and permissions that a plain
+          # directory upload would lose.
+          rm -f release/build/WarcraftRecorder-macos-arm64.zip
+          ditto -c -k --keepParent "$APP" release/build/WarcraftRecorder-macos-arm64.zip
+          ls -lh release/build/WarcraftRecorder-macos-arm64.zip
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: WarcraftRecorder-macos-arm64-${{ github.sha }}
+          path: release/build/WarcraftRecorder-macos-arm64.zip
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error

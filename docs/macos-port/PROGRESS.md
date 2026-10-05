@@ -4,10 +4,10 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Current state
 
-- **Current phase:** 4 (macOS MVP implementation)
+- **Current phase:** 5 (build and packaging); phase 4 code complete, awaiting CI
 - **Last checkpoint tag:** `macos-port-phase-3` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** run 37263053998 (commit 9a12244) green in 1.5 min: npm ci, typecheck, lint, unit tests (incl. log watcher on FSEvents), native build, helper probe + self-test, webpack build.
-- **Exact next step:** check CI for the macOS-behaviours commit; then phase 5: electron-builder mac arm64 config (Info.plist usage strings, ad-hoc signing, helper + ffmpeg in Resources/binaries), CI package step and artifact upload.
+- **Latest CI result:** run 37263777306 (commit 43fa1ec) cancelled by me: all tests passed but Jest did not exit (leaked FSEvents watcher, fixed in d4bf5f0). Last green: run 37263442479 (commit 9c3a608).
+- **Exact next step:** check the CI run for the packaging commit (package step, codesign verify, helper/ffmpeg from the bundle, artifact upload). Fix until green, then tag phases 4 and 5 and write MANUAL_TEST.md.
 
 ## Phase checklist
 
@@ -39,8 +39,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [x] Windows-only features disabled or removed: AppUpdater, explorer.exe, rust-ps.exe, Windows search paths, unconditional uiohook start (now lazy and guarded, needs Accessibility), tray icon sized for the menu bar
 
 ### Phase 5: build
-- [ ] electron-builder arm64 `.app`, Info.plist usage strings, ad-hoc signing
-- [ ] CI uploads the packaged app as an artifact
+- [ ] electron-builder arm64 `.app`, Info.plist usage strings, ad-hoc signing (config + afterPack hook written, D-007; awaiting CI)
+- [ ] CI uploads the packaged app as an artifact (steps written; awaiting CI)
 - [ ] Run-from-source fallback documented
 
 ### Phase 6: verification and handoff

@@ -51,3 +51,14 @@ Each entry: date, context, options considered, choice, reasoning. Never edit pas
 - Context: log parsing and activities for Classic and Era are platform-agnostic TypeScript.
 - Choice: keep Classic/Era enabled; the macOS process poller and WoW window matcher recognise Classic clients by install folder and app name/bundle ID prefix. Unverified on device.
 - Reasoning: near-zero cost.
+
+## D-007 (2026-10-05) Packaging and signing
+
+- Context: local arm64 `.app` only; no certificate, notarization, installer or auto-update. Apple Silicon will not run code whose signature was broken when electron-builder rewrote the bundle.
+- Choice:
+  - electron-builder `mac` target `dir` (arm64) producing `release/build/mac-arm64/WarcraftRecorder.app`; `asarUnpack: **/*.node`; Windows `nsis`/`win`/`publish` config removed.
+  - `mac.identity: null` (electron-builder does not sign) plus an `afterPack` hook (`.erb/scripts/adhoc-sign.js`) that ad-hoc signs the Mach-O files in Resources (capture helper, ffmpeg, `.node`) and then the bundle with `--deep`, and verifies with `codesign --verify --deep --strict`.
+  - No hardened runtime, so no entitlements are needed for microphone or screen capture. Info.plist gets `NSMicrophoneUsageDescription` (required, or macOS kills the process on mic access), `NSAudioCaptureUsageDescription` and `NSScreenCaptureUsageDescription` (harmless if unused), `LSMinimumSystemVersion 27.0`.
+  - CI zips the app with `ditto -c -k --keepParent` (keeps framework symlinks and executable bits that a plain directory artifact upload would lose) and uploads it with 7-day retention.
+- Consequence: TCC identifies ad-hoc signed apps by code hash, so each new build may need Screen Recording and Microphone re-granted (see MANUAL_TEST.md). A self-signed certificate would make grants stable but requires a keychain change on the owner's Mac; offered as an option, not done.
+- Logs: application logs move from inside the bundle to `~/Library/Logs/WarcraftRecorder` (writing into a signed bundle breaks its seal and fails under /Applications).
