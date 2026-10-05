@@ -5,7 +5,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 ## Current state
 
 - **Current phase:** 2 (detailed analysis)
-- **Last checkpoint tag:** `macos-port-phase-1`
+- **Last checkpoint tag:** `macos-port-phase-1` (local only; see blocker B-001 and the tag table below)
 - **Latest CI result:** no macOS CI workflow yet. Runner smoke test (run 37172369803) green: macOS 27.0.1, Xcode 27.0, SDK 27.0, Node 24.11.1, arm64.
 - **Exact next step:** write `docs/macos-port/ANALYSIS.md` (phase 2).
 
@@ -55,7 +55,14 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Open blockers (waiting on owner)
 
-- None.
+- **B-001: cannot push git tags.** The session's git proxy returns HTTP 403 for `refs/tags/*` (only `macos-port` is pushable), and the GitHub tools offer no tag creation. Phase tags are created locally and listed below with their commit SHAs. To publish them, run on your Mac:
+  `git fetch origin macos-port && git tag <tag> <sha> && git push origin <tag>` for each row, or grant the session tag push access. Work continues meanwhile.
+
+## Phase tags
+
+| Tag | Commit | Pushed |
+| --- | --- | --- |
+| `macos-port-phase-1` | `414af9a` | no (B-001) |
 
 ## In-flight experiments
 
