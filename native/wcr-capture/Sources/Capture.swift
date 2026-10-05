@@ -20,6 +20,10 @@ protocol CaptureFactory {
 }
 
 enum SCK {
+  /// SCStreamConfiguration.backgroundColor is unowned(unsafe): the color
+  /// must outlive the stream, so keep one for the process lifetime.
+  static let black = CGColor(gray: 0, alpha: 1)
+
   static func content() throws -> SCShareableContent {
     try waitFor("SCShareableContent", timeout: 10) { done in
       SCShareableContent.getExcludingDesktopWindows(true, onScreenWindowsOnly: true) {
@@ -158,7 +162,7 @@ final class SCKVideoSource: NSObject, VideoFrameSource, SCStreamOutput, SCStream
     sc.scalesToFit = true
     sc.preservesAspectRatio = true
     sc.captureResolution = .best
-    sc.backgroundColor = CGColor(gray: 0, alpha: 1)
+    sc.backgroundColor = SCK.black
     sc.capturesAudio = false
 
     let stream = SCStream(filter: filter, configuration: sc, delegate: self)
