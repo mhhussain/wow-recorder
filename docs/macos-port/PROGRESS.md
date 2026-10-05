@@ -4,10 +4,10 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Current state
 
-- **Current phase:** 2 (detailed analysis)
-- **Last checkpoint tag:** `macos-port-phase-1` (local only; see blocker B-001 and the tag table below)
+- **Current phase:** 3 (recording backend decision)
+- **Last checkpoint tag:** `macos-port-phase-2` (local only; see blocker B-001 and the tag table below)
 - **Latest CI result:** no macOS CI workflow yet. Runner smoke test (run 37172369803) green: macOS 27.0.1, Xcode 27.0, SDK 27.0, Node 24.11.1, arm64.
-- **Exact next step:** write `docs/macos-port/ANALYSIS.md` (phase 2).
+- **Exact next step:** phase 3: record the backend decision, add `macos-ci.yml`, build the Swift helper skeleton with a self-test on the runner.
 
 ## Phase checklist
 
@@ -19,7 +19,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [x] Removed broken `node.js.yml` (D-001)
 
 ### Phase 2: detailed analysis
-- [ ] `ANALYSIS.md`
+- [x] `ANALYSIS.md`
 
 ### Phase 3: recording backend decision
 - [ ] Options evaluated (OBS / ffmpeg / ScreenCaptureKit helper)
@@ -51,7 +51,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Last session
 
-- 2026-10-05: phase 1 complete. Orientation, baseline measurements, agent files.
+- 2026-10-05: phase 1 complete (orientation, baseline measurements, agent files). Phase 2 complete (ANALYSIS.md).
 
 ## Open blockers (waiting on owner)
 
@@ -63,6 +63,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 | Tag | Commit | Pushed |
 | --- | --- | --- |
 | `macos-port-phase-1` | `414af9a` | no (B-001) |
+| `macos-port-phase-2` | see `git log --grep '\[phase-2\] add ANALYSIS'` | no (B-001) |
 
 ## In-flight experiments
 
