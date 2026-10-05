@@ -141,7 +141,7 @@ const ScrollArea = React.forwardRef<
     },
     ref,
   ) => {
-    const viewportRef = React.useRef<HTMLDivElement>();
+    const viewportRef = React.useRef<HTMLDivElement>(null);
     const [viewport, setViewport] = React.useState<HTMLDivElement>();
 
     React.useLayoutEffect(() => {

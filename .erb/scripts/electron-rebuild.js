@@ -7,8 +7,9 @@ if (
   Object.keys(dependencies || {}).length > 0 &&
   fs.existsSync(webpackPaths.appNodeModulesPath)
 ) {
-  const electronRebuildCmd =
-    '../../node_modules/.bin/electron-rebuild --force --types prod,dev,optional --module-dir . -v 38.1.2';
+  // Rebuild against the Electron version actually installed.
+  const { version } = require('../../node_modules/electron/package.json');
+  const electronRebuildCmd = `../../node_modules/.bin/electron-rebuild --force --types prod,dev,optional --module-dir . -v ${version}`;
   const cmd =
     process.platform === 'win32'
       ? electronRebuildCmd.replace(/\//g, '\\')

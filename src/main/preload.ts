@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
-import { ObsProperty, SceneItemPosition, SourceDimensions } from 'noobs';
+import {
+  ObsProperty,
+  SceneItemPosition,
+  SourceDimensions,
+} from './mac/noobsTypes';
 import { AudioSourceType, RendererVideo, SceneItem } from './types';
 import { TChatMessageWithId } from 'types/api';
 

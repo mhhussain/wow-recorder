@@ -19,6 +19,16 @@ export default [
       ...reactHooks.configs.recommended.rules,
       'react/react-in-jsx-scope': 'off',
       '@typescript-eslint/no-require-imports': 'off',
+      // macOS port (DECISIONS D-003): pre-existing violations in code the
+      // port does not touch are reported as warnings so lint can gate CI.
+      // react/prop-types is redundant with TypeScript props.
+      '@typescript-eslint/no-explicit-any': 'warn',
+      'react-hooks/set-state-in-effect': 'warn',
+      'react-hooks/refs': 'warn',
+      'react-hooks/purity': 'warn',
+      'react-hooks/immutability': 'warn',
+      'react-hooks/static-components': 'warn',
+      'react/prop-types': 'off',
     },
     settings: { react: { version: 'detect' } },
     ignores: [

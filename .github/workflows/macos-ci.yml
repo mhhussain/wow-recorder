@@ -31,9 +31,10 @@ jobs:
     env:
       CI_CACHE: ${{ github.workspace }}/.ci-cache
       npm_config_cache: ${{ github.workspace }}/.ci-cache/npm
-      npm_config_devdir: ${{ github.workspace }}/.ci-cache/node-gyp
       electron_config_cache: ${{ github.workspace }}/.ci-cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.ci-cache/electron-builder
+      # node-gyp header cache for native module rebuilds.
+      npm_config_devdir: ${{ github.workspace }}/.ci-cache/node-gyp
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - uses: actions/checkout@v4
@@ -50,33 +51,42 @@ jobs:
 
       - name: Toolchain
         run: |
-          sw_vers
+          sw_vers -productVersion
           xcrun --show-sdk-version
-          xcrun swiftc --version
           node -v && npm -v
 
-      - name: Build capture helper
-        run: bash native/wcr-capture/build.sh
-
-      - name: Probe capabilities
-        run: binaries/wcr-capture probe
-
-      - name: Self-test recording pipeline
+      - name: Install dependencies (skipped when lockfiles are unchanged)
         run: |
+          HASH=$(cat package-lock.json release/app/package-lock.json | shasum -a 256 | cut -d' ' -f1)
+          STAMP=node_modules/.ci-lock-hash
+          if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$HASH" ]; then
+            echo "Dependencies up to date"
+          else
+            npm ci --no-audit --no-fund
+            echo "$HASH" > "$STAMP"
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build native binaries (capture helper, ffmpeg)
+        run: npm run build:native
+
+      - name: Capture helper probe and self-test
+        run: |
+          binaries/wcr-capture probe
           rm -rf "$CI_CACHE/selftest"
           binaries/wcr-capture selftest "$CI_CACHE/selftest"
-
-      - name: ffmpeg checks
-        run: |
-          mkdir -p "$CI_CACHE/ffmpeg-probe"
-          npm install --no-save --no-audit --no-fund --prefix "$CI_CACHE/ffmpeg-probe" ffmpeg-static@5.3.0 >/dev/null
-          FF="$CI_CACHE/ffmpeg-probe/node_modules/ffmpeg-static/ffmpeg"
-          file "$FF"
-          "$FF" -hide_banner -version | head -1
+          file binaries/ffmpeg
           for f in "$CI_CACHE"/selftest/*.mp4; do
-            echo "== $f"
-            "$FF" -hide_banner -i "$f" 2>&1 | grep -E 'Duration|Stream' || true
-            "$FF" -v error -i "$f" -map 0 -f null - && echo "decode OK"
+            binaries/ffmpeg -v error -i "$f" -map 0 -f null - && echo "decode OK: $(basename "$f")"
           done
-          echo "== avfoundation devices (system audio needs a virtual device if none listed)"
-          "$FF" -hide_banner -f avfoundation -list_devices true -i "" 2>&1 || true
+
+      - name: Build app bundles
+        run: npm run build

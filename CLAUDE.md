@@ -35,7 +35,7 @@ Electron + React, built on electron-react-boilerplate (ERB). Details in `docs/ma
 
 macOS port specifics (updated as work lands; see PROGRESS.md for status):
 
-- Recording backend: native Swift helper using ScreenCaptureKit + VideoToolbox + AVFoundation, driven over stdio by a TypeScript shim that implements the subset of the `noobs` API the Recorder uses. See DECISIONS.md.
+- Recording backend (D-004): `native/wcr-capture/` Swift helper (ScreenCaptureKit video and system/app audio, AVFoundation mics, six-track mixer, VideoToolbox, 60 s replay buffer, fragmented MP4) talks JSON lines over stdio. `src/main/mac/MacNoobs.ts` implements the `noobs` call surface on top of it (`src/main/mac/noobs.ts` wires it to Electron), so `Recorder.ts` call sites are unchanged. Types formerly from `noobs` live in `src/main/mac/noobsTypes.ts`.
 - Process detection: `ps`-based poller instead of `binaries/rust-ps.exe`.
 
 ## Key directories and entry points
@@ -58,15 +58,18 @@ macOS port specifics (updated as work lands; see PROGRESS.md for status):
 
 Linux container (cloud agent) and macOS runner both use Node 24 / npm 11.
 
-- Install without native builds (Linux container): `npm ci --ignore-scripts`
-- Typecheck: `node node_modules/typescript/bin/tsc --noEmit -p .` (do **not** use `npx tsc`; the `tsc` npm package in dependencies shadows TypeScript's binary)
-- Lint: `npm run lint`
-- Unit tests: `npm test` (jest)
+- Install (Mac): `npm ci` (downloads Electron and the arm64 ffmpeg, rebuilds `uiohook-napi`).
+- Install (Linux container, no native builds): `npm ci --ignore-scripts && (cd release/app && npm ci --ignore-scripts) && ln -sfn ../release/app/node_modules src/node_modules`
+- Typecheck: `npm run typecheck` (uses `tsconfig.typecheck.json`: bundler resolution for ESM-only typings; webpack and ts-node keep `tsconfig.json`)
+- Lint: `npm run lint` (0 errors required; pre-existing warnings allowed, see D-003)
+- Unit tests: `npm test` (jest; Electron, electron-store, electron-log, uiohook-napi, archiver, `main/main` and CloudClient are stubbed in `tests/mocks/` and `tests/setup.ts`)
+- Native binaries (Mac only): `npm run build:native` builds `binaries/wcr-capture` and copies `binaries/ffmpeg`
+- Capture helper checks (Mac only): `binaries/wcr-capture probe`, `binaries/wcr-capture selftest <dir>`
 - Build JS bundles: `npm run build`
-- Package (macOS runner only): `npm run package`
-- Dev mode (on the Mac): `npm start`
+- Package (Mac only): `npm run package`
+- Dev mode (Mac): `npm run build:native && npm start`
 
-Baseline note: upstream did not typecheck, lint, or pass jest cleanly at fork time (55 tsc errors, 52 lint errors, all jest suites failing to load). Making these real gates is part of the port; see PROGRESS.md for current state.
+All gates (typecheck, lint, test, build) were red at fork time and are green as of phase 4 (D-003).
 
 ## Conventions observed in the repo
 
@@ -92,6 +95,11 @@ The macOS runner is the owner's personal Mac (`runs-on: [self-hosted, macOS, ARM
 Kept current as work lands. See DECISIONS.md for reasoning.
 
 - `.github/workflows/node.js.yml`: removed. It was fully commented out, which made every push report a failed workflow.
+- `noobs` (Windows libobs binding): removed from `release/app`; replaced by the capture helper and `MacNoobs` shim.
+- `tsc` npm package (unrelated to TypeScript, shadowed its binary): removed.
+- Window-finding/attach polling in `Recorder` (`[Wow.exe]` window names): replaced; the helper finds and follows the WoW window.
+- `src/renderer/CrashStatus.tsx`: deleted (dead file importing a type that no longer exists).
+- Native preview and scene editor: shim accepts the calls and does nothing (no macOS preview, D-004).
 
 ## Fixture handling rules
 

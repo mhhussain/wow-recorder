@@ -172,11 +172,11 @@ final class Engine {
       return
     }
 
-    guard !config.outputDir.isEmpty else {
-      throw HelperError.invalidState("output directory not configured")
-    }
-
     do {
+      guard !config.outputDir.isEmpty else {
+        throw HelperError.invalidState("output directory not configured")
+      }
+
       // Callbacks capture the encoder and pacer instances directly rather
       // than reading them through self from other queues.
       let encoder = try VideoEncoder(

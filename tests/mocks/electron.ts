@@ -13,11 +13,23 @@ export const app = {
 };
 
 export const ipcMain = { on: noop, handle: noop, removeAllListeners: noop };
-export const ipcRenderer = { on: noop, send: noop, invoke: async () => undefined };
-export const shell = { showItemInFolder: noop, openExternal: async () => undefined };
-export const dialog = { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) };
+export const ipcRenderer = {
+  on: noop,
+  send: noop,
+  invoke: async () => undefined,
+};
+export const shell = {
+  showItemInFolder: noop,
+  openExternal: async () => undefined,
+};
+export const dialog = {
+  showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
+};
 export const powerMonitor = { on: noop };
-export const screen = { getPrimaryDisplay: () => ({}), getAllDisplays: () => [] };
+export const screen = {
+  getPrimaryDisplay: () => ({}),
+  getAllDisplays: () => [],
+};
 export const systemPreferences = {
   getMediaAccessStatus: () => 'granted',
   askForMediaAccess: async () => true,

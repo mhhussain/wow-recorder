@@ -1,0 +1,17 @@
+{
+  // Type checking only (npm run typecheck). Webpack and ts-node keep using
+  // tsconfig.json. Bundler resolution reads package "exports" maps the way
+  // webpack does, which electron-store's ESM-only types require.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "paths": {
+      "@excalidraw/excalidraw/dist/types/*": [
+        "../node_modules/@excalidraw/excalidraw/dist/types/*"
+      ]
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import path from 'path';
+import { app } from 'electron';
 import { getBaseConfig, shouldUpload } from '../utils/configUtils';
 import DiskSizeMonitor from '../storage/DiskSizeMonitor';
 import ConfigService from '../config/ConfigService';
@@ -17,7 +18,6 @@ import {
   getMetadataForVideo,
   rendererVideoToMetadata,
   getFileInfo,
-  fixPathWhenPackaged,
   logAxiosError,
   buildKillVideoMetadata,
   getOBSFormattedDate,
@@ -35,16 +35,14 @@ const atomicQueue = require('atomic-queue');
 const devMode = process.env.NODE_ENV === 'development';
 const isDebug = devMode || process.env.DEBUG_PROD === 'true';
 
-// Use the dynamically linked ffmpeg.exe we package with OBS in noobs. This
-// allows us to avoid including a static ffmpeg.exe which is an extra 60MB.
-const ffmpegPathRel = 'node_modules/noobs/dist/bin/ffmpeg.exe';
-
-let ffmpegPathAbs = devMode
-  ? path.resolve(__dirname, '../../release/app/', ffmpegPathRel)
-  : path.resolve(__dirname, '../../', ffmpegPathRel);
-
-ffmpegPathAbs = fixPathWhenPackaged(ffmpegPathAbs);
-ffmpeg.setFfmpegPath(ffmpegPathAbs);
+// The arm64 ffmpeg from ffmpeg-static, copied to binaries/ by
+// `npm run build:native` and shipped as an extra resource (DECISIONS D-005).
+// Resolved lazily: util imports this module indirectly, so calling into util
+// at module load time would hit the import cycle half-initialized.
+const ffmpegPath = () =>
+  app.isPackaged
+    ? path.join(process.resourcesPath, 'binaries', 'ffmpeg')
+    : path.join(__dirname, '../../binaries', 'ffmpeg');
 
 /**
  * A queue for cutting videos to size.
@@ -115,6 +113,8 @@ export default class VideoProcessQueue {
    * Constructor.
    */
   private constructor() {
+    ffmpeg.setFfmpegPath(ffmpegPath());
+
     this.videoQueue = this.createVideoQueue();
     this.uploadQueue = this.createUploadQueue();
     this.downloadQueue = this.createDownloadQueue();
@@ -127,13 +127,17 @@ export default class VideoProcessQueue {
     const queue = atomicQueue(worker, settings);
 
     /* eslint-disable prettier/prettier */
-    queue
-      .on('error', VideoProcessQueue.errorProcessingVideo)
-      .on('idle', () => {this.videoQueueEmpty()});
-         
+    queue.on('error', VideoProcessQueue.errorProcessingVideo).on('idle', () => {
+      this.videoQueueEmpty();
+    });
+
     queue.pool
-      .on('start', (data: VideoQueueItem) => { this.startedProcessingVideo(data) })
-      .on('finish', (_: unknown, data: VideoQueueItem) => { this.finishProcessingVideo(data) });
+      .on('start', (data: VideoQueueItem) => {
+        this.startedProcessingVideo(data);
+      })
+      .on('finish', (_: unknown, data: VideoQueueItem) => {
+        this.finishProcessingVideo(data);
+      });
     /* eslint-enable prettier/prettier */
 
     return queue;
@@ -145,13 +149,17 @@ export default class VideoProcessQueue {
     const queue = atomicQueue(worker, settings);
 
     /* eslint-disable prettier/prettier */
-    queue
-      .on('error', VideoProcessQueue.errorUploadingVideo)
-      .on('idle', () => { this.uploadQueueEmpty() });
+    queue.on('error', VideoProcessQueue.errorUploadingVideo).on('idle', () => {
+      this.uploadQueueEmpty();
+    });
 
     queue.pool
-      .on('start', (item: UploadQueueItem) => { this.startedUploadingVideo(item) })
-      .on('finish', async (_: unknown, item: UploadQueueItem) => { await this.finishUploadingVideo(item) });
+      .on('start', (item: UploadQueueItem) => {
+        this.startedUploadingVideo(item);
+      })
+      .on('finish', async (_: unknown, item: UploadQueueItem) => {
+        await this.finishUploadingVideo(item);
+      });
     /* eslint-enable prettier/prettier */
 
     return queue;
@@ -165,11 +173,17 @@ export default class VideoProcessQueue {
     /* eslint-disable prettier/prettier */
     queue
       .on('error', VideoProcessQueue.errorDownloadingVideo)
-      .on('idle', () => { this.downloadQueueEmpty() });
+      .on('idle', () => {
+        this.downloadQueueEmpty();
+      });
 
     queue.pool
-      .on('start', (video: RendererVideo) => { this.startedDownloadingVideo(video) })
-      .on('finish', async (_: unknown, video: RendererVideo) => { await this.finishDownloadingVideo(video) });
+      .on('start', (video: RendererVideo) => {
+        this.startedDownloadingVideo(video);
+      })
+      .on('finish', async (_: unknown, video: RendererVideo) => {
+        await this.finishDownloadingVideo(video);
+      });
     /* eslint-enable prettier/prettier */
 
     return queue;
@@ -181,13 +195,17 @@ export default class VideoProcessQueue {
     const queue = atomicQueue(worker, settings);
 
     /* eslint-disable prettier/prettier */
-    queue
-      .on('error', VideoProcessQueue.errorKillVideo)
-      .on('idle', () => { this.videoQueueEmpty() });
+    queue.on('error', VideoProcessQueue.errorKillVideo).on('idle', () => {
+      this.videoQueueEmpty();
+    });
 
     queue.pool
-      .on('start', (item: KillVideoQueueItem) => { this.startedProcessingKillVideo(item) })
-      .on('finish', (_: unknown, item: KillVideoQueueItem) => { this.finishProcessingKillVideo(item) });
+      .on('start', (item: KillVideoQueueItem) => {
+        this.startedProcessingKillVideo(item);
+      })
+      .on('finish', (_: unknown, item: KillVideoQueueItem) => {
+        this.finishProcessingKillVideo(item);
+      });
     /* eslint-enable prettier/prettier */
 
     return queue;
@@ -544,6 +562,7 @@ export default class VideoProcessQueue {
   /**
    * Actions on starting the processing of a kill video.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private startedProcessingKillVideo(item: KillVideoQueueItem) {
     console.info('[VideoProcessQueue] Now processing kill video');
 

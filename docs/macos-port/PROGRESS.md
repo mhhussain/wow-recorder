@@ -7,7 +7,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - **Current phase:** 4 (macOS MVP implementation)
 - **Last checkpoint tag:** `macos-port-phase-3` (local only; see blocker B-001 and the tag table below)
 - **Latest CI result:** `macos-ci` run 37261237609 (commit 58a5a82) green in 40 s: helper compiles, probe OK, self-test pass (3 recordings verified: durations 5.08/5.07/2.03 s, 6 AAC tracks with expected levels, avc1/hvc1), ffmpeg decodes all.
-- **Exact next step:** phase 4: remove `noobs`, add the TypeScript shim (`src/main/mac/`) that drives `wcr-capture`, wire Recorder to it, then the ps poller, log watcher hardening and unit tests.
+- **Exact next step:** check CI for the shim commit (npm ci, typecheck, lint, test, build:native, self-test, build on the runner). Then: ps-based Poller, CombatLogWatcher hardening, LogHandler state-machine tests with fixture excerpts.
 
 ## Phase checklist
 
@@ -28,7 +28,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [x] Decision recorded (D-004, D-005, D-006)
 
 ### Phase 4: macOS MVP implementation
-- [ ] Quality gates green (tsc, lint, jest)
+- [x] Quality gates green locally (tsc 0 errors, lint 0 errors, jest 27 tests)
+- [x] `noobs` removed; `MacNoobs` shim + `CaptureHelper` client wired into Recorder (fail-fast start errors, VideoToolbox encoders and quality mapping); shim unit tests
 - [ ] Unit tests: log parsing and start/stop state machine for raids and M+ using real fixtures and a mocked recorder
 - [ ] Log folder discovery and robust log tailing on macOS
 - [ ] WoW process detection

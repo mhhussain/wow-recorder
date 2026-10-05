@@ -648,10 +648,12 @@ const encoderFilter = (enc: string, highRes: boolean) => {
     return false;
   }
 
-  // If we have a resolution above 4k, only the software and AV1 hardware encoders are valid.
+  // If we have a resolution above 4k, only the software, HEVC (VideoToolbox)
+  // and AV1 hardware encoders are valid.
   if (highRes) {
     return (
       encoder === ESupportedEncoders.OBS_X264 ||
+      encoder === ESupportedEncoders.VT_HEVC ||
       encoder === ESupportedEncoders.AMD_AV1 ||
       encoder === ESupportedEncoders.NVENC_AV1 ||
       encoder === ESupportedEncoders.QSV_AV1
@@ -698,6 +700,10 @@ const getFriendlyEncoderName = (enc: ESupportedEncoders) => {
       return 'Intel H.264';
     case ESupportedEncoders.QSV_AV1:
       return 'Intel AV1';
+    case ESupportedEncoders.VT_H264:
+      return 'Apple VideoToolbox H.264';
+    case ESupportedEncoders.VT_HEVC:
+      return 'Apple VideoToolbox HEVC';
     default:
       throw new Error('Unknown Encoder: ' + enc);
   }
@@ -709,9 +715,11 @@ const getFriendlyCodecName = (enc: string) => {
     case ESupportedEncoders.NVENC_H264:
     case ESupportedEncoders.AMD_H264:
     case ESupportedEncoders.QSV_H264:
+    case ESupportedEncoders.VT_H264:
       return 'H264';
     case ESupportedEncoders.NVENC_H265:
     case ESupportedEncoders.AMD_H265:
+    case ESupportedEncoders.VT_HEVC:
       return 'H265';
     case ESupportedEncoders.NVENC_AV1:
     case ESupportedEncoders.AMD_AV1:
