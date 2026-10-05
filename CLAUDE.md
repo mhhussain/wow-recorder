@@ -65,6 +65,8 @@ Linux container (cloud agent) and macOS runner both use Node 24 / npm 11.
 - Unit tests: `npm test` (jest; Electron, electron-store, electron-log, uiohook-napi, archiver, `main/main` and CloudClient are stubbed in `tests/mocks/` and `tests/setup.ts`)
 - Native binaries (Mac only): `npm run build:native` builds `binaries/wcr-capture` and copies `binaries/ffmpeg`
 - Capture helper checks (Mac only): `binaries/wcr-capture probe`, `binaries/wcr-capture selftest <dir>`
+- Packaged-app boot check (Mac only): `WCR_SMOKE_TEST=<dir> release/build/mac-arm64/WarcraftRecorder.app/Contents/MacOS/WarcraftRecorder` (exits 0/1; no permission prompts; see `src/main/smokeTest.ts`)
+- Scenario tests: `src/__tests__/scenarios/` replays real combat logs through the real handlers with a mocked recorder. Raid/M+ use excerpts (`tests/fixtures/excerpts`, regenerate with `python3 tests/fixtures/make_excerpts.py`); full-log fidelity tests and PvP tests run when the full logs are present. `src/__tests__/mac/HelperIntegration.test.ts` drives the real helper on macOS.
 - Build JS bundles: `npm run build`
 - Package (Mac only): `npm run package`
 - Dev mode (Mac): `npm run build:native && npm start`
