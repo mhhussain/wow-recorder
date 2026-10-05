@@ -388,6 +388,11 @@ const haveFullLogs = fs.existsSync(path.join(fullLogs, 'retail/raid_wipe.txt'));
  */
 const havePvpLogs = fs.existsSync(path.join(fullLogs, 'retail/rated_2v2.txt'));
 
+// CI's sparse checkout keeps the PvP logs; fail there rather than skip.
+(process.env.CI ? test : test.skip)('CI checkout includes the PvP logs', () => {
+  expect(havePvpLogs).toBe(true);
+});
+
 (havePvpLogs ? describe : describe.skip)('pvp (full logs)', () => {
   const pvp: [Flavour, string, string[]][] = [
     ['retail', 'rated_2v2', ['Alexhots - 2v2 Enigma Crucible (Win)']],

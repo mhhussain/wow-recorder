@@ -22,10 +22,9 @@ const classicFolders = [
 ];
 
 /**
- * Process listing command. `-ww` matters: without a terminal (the packaged
- * app, CI) BSD ps cuts its last column at 79 characters, which turns
- *   /Applications/World of Warcraft/_retail_/World of Warcraft.app/Contents/MacOS/World of Warcraft
- * into ".../Contents/MacOS/W" and WoW is never detected.
+ * Process listing command. `-ww` asks for unlimited width so a long
+ * executable path is never cut to the terminal width (the app may be
+ * started from a terminal in dev mode).
  */
 export const psCommand = '/bin/ps';
 export const psArgs = ['-axww', '-o', 'comm='];

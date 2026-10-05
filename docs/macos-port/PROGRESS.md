@@ -6,8 +6,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 - **Current phase:** 6 (verification and handoff): fixing on-device findings
 - **Last checkpoint tag:** `macos-port-phase-7-pvp` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** pending for the D-009 fix commit (previous: run 37264835448 on af5550d, green).
-- **Exact next step:** owner installs the new build (MANUAL_TEST.md section 1; re-grant permissions if capture fails, section 2), opens WoW and confirms the status shows "Ready to record", then repeats the Mythic+ run (section 6). Send the newest log from `~/Library/Logs/WarcraftRecorder/` either way.
+- **Latest CI result:** pending for the D-010 commit. Run 37384710524 (4ad186f) failed: the refuted ps truncation test, and the new fixture missing from the runner's sparse checkout (both fixed in D-010). Last green: run 37264835448 (af5550d), but it skipped 30 tests including all PvP scenarios (D-010).
+- **Exact next step:** owner sends the app log covering the failed run (newest file in `~/Library/Logs/WarcraftRecorder/` from 2026-10-05 around 18:2x, or the lines containing `[Manager]`, `[Recorder]`, `[MacNoobs]`, `[Poller]`, `[wcr-capture]`) and, with WoW open, the output of `ps -axo comm= | grep -i warcraft`. Then installs the new build (MANUAL_TEST.md section 1), checks the status shows "Ready to record" with WoW open, and repeats the Mythic+ run (section 6).
 
 ## Phase checklist
 
@@ -49,11 +49,11 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [x] Final status report (end of session 1, below)
 
 ### On-device findings (owner)
-- [x] 2026-10-05 Mythic+ (Murder Row +11): error "Buffer not started" at CHALLENGE_MODE_START, no video. Cause: WoW never detected because `ps` truncated the client path at 79 columns without a terminal. Fixed (D-009): `ps -ww`, detection logging, a fallback that starts the buffer at activity start instead of dropping the run, and reports for unexpected buffer loss. Log kept as a fixture with a scenario test. Awaiting the owner's re-test.
+- [ ] 2026-10-05 Mythic+ (Murder Row +11): error "Buffer not started" at CHALLENGE_MODE_START, no video. The log pipeline worked (the fixture replays to a recording start); the recorder was not buffering. Root cause unknown: the first diagnosis (ps truncation, D-009) was refuted on the runner (D-010). Mitigations shipped: a fallback that starts the buffer at activity start instead of dropping the run, a report for unexpected buffer loss, and `[Poller] WoW processes` logging. Waiting on the owner's app log and re-test.
 
 ### Phase 7 (optional, after MVP)
 - [x] Classic and Era: free (D-006); scenario tests pass for Classic raid, MoP challenge mode, Era raid
-- [x] PvP triggers: code unchanged and platform-agnostic; 13 scenario tests on the real PvP fixture logs (Retail 2v2/3v3/skirmish/wargame/solo shuffle/rated BG/AFK-out, Classic 2v2/3v3/5v5/BG/extra units/feign death) match upstream's expected outcomes
+- [x] PvP triggers: code unchanged and platform-agnostic; 13 scenario tests on the real PvP fixture logs (Retail 2v2/3v3/skirmish/wargame/solo shuffle/rated BG/AFK-out, Classic 2v2/3v3/5v5/BG/extra units/feign death) match upstream's expected outcomes. They ran in the Linux container only until D-010 fixed the runner's checkout.
 - [ ] Secondary features: preview/scene editor, chat overlay, cloud (untouched), viewer polish
 
 ## Last session
@@ -65,7 +65,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
   - CI: one workflow, 84 s warm, produces a signed arm64 app artifact.
   - Found and fixed along the way: Electron 44 ABI unknown to node-abi 4.31 (CI npm ci), FSEvents watcher leak hanging Jest on macOS, logs written inside the signed bundle, upstream tests stale (wrong constructor arity, hardcoded year).
 
-- 2026-10-05 (session 1, continued): owner's first on-device Mythic+ run failed ("Buffer not started"); root cause and fix in D-009. Tests: 95 (89 run on Linux; 6 macOS-only: helper integration and real `ps` width checks).
+- 2026-10-05 (session 1, continued): owner's first on-device Mythic+ run failed ("Buffer not started"). Mitigations in D-009; its root cause claim refuted in D-010 (cause unknown pending the app log). Found and fixed: the runner never had the PvP fixture logs (persistent sparse checkout). Tests: 94. The Linux container runs 89; the other 5 run only on the runner (3 helper integration, 1 real `ps` check, 1 check that the CI checkout has the PvP logs).
 
 ## Open blockers (waiting on owner)
 

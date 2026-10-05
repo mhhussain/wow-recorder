@@ -40,22 +40,32 @@ jobs:
       # node-gyp header cache for native module rebuilds.
       npm_config_devdir: ${{ github.workspace }}/.ci-cache/node-gyp
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # Skip the large raid and M+ logs (unit tests use excerpts of them)
+      # and upstream's duplicate copies; keep the small PvP and Mac logs.
+      SPARSE_PATTERNS: |
+        /*
+        !/tests/logs/
+        !/tests/fixtures/combatlogs/retail/raid_*
+        !/tests/fixtures/combatlogs/retail/mythic_plus*
+        !/tests/fixtures/combatlogs/retail/beloren_boss_hp.txt
+        !/tests/fixtures/combatlogs/retail/coiled_altar_boss_hp.txt
     steps:
       - uses: actions/checkout@v4
         with:
           clean: ${{ inputs.clean == true }}
           fetch-depth: 1
           filter: blob:none
-          # Skip the large raid and M+ logs (unit tests use excerpts of
-          # them) and upstream's duplicate copies; keep the small PvP logs.
           sparse-checkout-cone-mode: false
-          sparse-checkout: |
-            /*
-            !/tests/logs/
-            !/tests/fixtures/combatlogs/retail/raid_*
-            !/tests/fixtures/combatlogs/retail/mythic_plus*
-            !/tests/fixtures/combatlogs/retail/beloren_boss_hp.txt
-            !/tests/fixtures/combatlogs/retail/coiled_altar_boss_hp.txt
+          sparse-checkout: ${{ env.SPARSE_PATTERNS }}
+
+      - name: Apply sparse checkout
+        # The workspace persists between runs, and files an earlier pattern
+        # set excluded stayed excluded after the patterns changed (the PvP
+        # logs never reached the runner). `set` rewrites and reapplies them.
+        run: |
+          printf '%s\n' "$SPARSE_PATTERNS" | git sparse-checkout set --no-cone --stdin
+          git config --get-regexp '^core\.sparse'
+          ls tests/fixtures/combatlogs/retail
 
       - name: Toolchain
         run: |
