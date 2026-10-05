@@ -38,6 +38,18 @@ test('falls back to the app name for non-standard install folders', () => {
   });
 });
 
+test("detects the owner's install on an external volume", () => {
+  // `ps -axo comm= | grep -i warcraft` on the owner's Mac with WoW open.
+  const ps = [
+    '/Volumes/Dock/World of Warcraft/_retail_/World of Warcraft.app/Contents/MacOS/World of Warcraft',
+    '/Volumes/Dock/World of Warcraft/_retail_/World of Warcraft.app/Contents/Helpers/WowVoiceProxy.app/Contents/MacOS/WowVoiceProxy',
+    '/Users/me/Applications/WarcraftRecorder.app/Contents/MacOS/WarcraftRecorder',
+    '/Users/me/Applications/WarcraftRecorder.app/Contents/Resources/binaries/wcr-capture',
+  ].join('\n');
+
+  expect(parseWowProcesses(ps)).toEqual({ Retail: true, Classic: false });
+});
+
 test('accepts a bare client name', () => {
   expect(parseWowProcesses('World of Warcraft')).toEqual({
     Retail: true,

@@ -68,10 +68,12 @@ enum SCK {
   }
 }
 
-/// ScreenCaptureKit video capture of a display or the WoW window. WoW mode
-/// survives the window not existing yet, being recreated (fullscreen
-/// toggles) or closing: it keeps re-finding the window while black frames
-/// fill the gap.
+/// ScreenCaptureKit video capture of a display or the WoW window. Attaching
+/// happens off the caller's queue and is retried every 3 s, so starting the
+/// buffer never waits on ScreenCaptureKit (which can stall, for example
+/// while a permission prompt is up); black frames fill any gap. WoW mode
+/// also survives the window not existing yet, being recreated (fullscreen
+/// toggles) or closing.
 final class SCKVideoSource: NSObject, VideoFrameSource, SCStreamOutput, SCStreamDelegate {
   private let queue = DispatchQueue(label: "wcr.sck.video", qos: .userInteractive)
   private let control = DispatchQueue(label: "wcr.sck.video.control")
@@ -82,24 +84,23 @@ final class SCKVideoSource: NSObject, VideoFrameSource, SCStreamOutput, SCStream
   private var running = false
   private var windowID: CGWindowID?
   private var lastFrame = Date.distantPast
+  private var attachFailureReported = false
 
   func start(config: EngineConfig, onFrame: @escaping (CVPixelBuffer) -> Void) throws {
     try SCK.requireScreenPermission()
     self.config = config
     self.onFrame = onFrame
 
-    try control.sync {
-      running = true
-      try attach()
+    control.async {
+      self.running = true
+      self.tryAttach()
     }
 
-    if config.video.kind == "wow" {
-      let timer = DispatchSource.makeTimerSource(queue: control)
-      timer.schedule(deadline: .now() + 3, repeating: 3)
-      timer.setEventHandler { [weak self] in self?.checkWindow() }
-      timer.resume()
-      watchdog = timer
-    }
+    let timer = DispatchSource.makeTimerSource(queue: control)
+    timer.schedule(deadline: .now() + 3, repeating: 3)
+    timer.setEventHandler { [weak self] in self?.checkWindow() }
+    timer.resume()
+    watchdog = timer
   }
 
   func stop() {
@@ -176,15 +177,32 @@ final class SCKVideoSource: NSObject, VideoFrameSource, SCStreamOutput, SCStream
     windowID = nil
   }
 
-  /// Re-find the WoW window if we have none, or if frames stopped arriving
-  /// and the window we hold no longer exists.
+  /// Runs on `control`. The first failure becomes an app error report;
+  /// retries only log until one succeeds.
+  private func tryAttach() {
+    do {
+      try attach()
+      attachFailureReported = false
+    } catch {
+      logWarn("Video capture attach failed: \(error)")
+      if !attachFailureReported {
+        attachFailureReported = true
+        IO.emit(["event": "error", "message": "Video capture is not running yet, retrying: \(error)"])
+      }
+    }
+  }
+
+  /// Attach if we have no stream. In WoW mode, also re-find the window if
+  /// frames stopped arriving and the window we hold no longer exists.
   private func checkWindow() {
     guard running else { return }
 
     if activeStream == nil {
-      do { try attach() } catch { logWarn("WoW window attach failed: \(error)") }
+      tryAttach()
       return
     }
+
+    guard config.video.kind == "wow" else { return }
 
     // WoW renders continuously, so a long frame gap means the window went
     // away or was replaced.
@@ -235,16 +253,17 @@ final class SCKVideoSource: NSObject, VideoFrameSource, SCStreamOutput, SCStream
       self.activeStream = nil
       self.windowID = nil
       if self.running && self.config.video.kind == "display" {
-        do { try self.attach() } catch { logError("Display re-attach failed: \(error)") }
+        self.tryAttach()
       }
-      // WoW mode re-attaches from the watchdog.
+      // Otherwise the watchdog re-attaches.
     }
   }
 }
 
 /// ScreenCaptureKit audio: either all system audio (minus this app) or one
 /// application's audio. A tiny, slow video stream is required by the API and
-/// discarded.
+/// discarded. A failed attach is retried every 3 s rather than dropping the
+/// source.
 final class SCKAudioSource: NSObject, AudioCaptureSource, SCStreamOutput, SCStreamDelegate {
   private let queue = DispatchQueue(label: "wcr.sck.audio", qos: .userInteractive)
   private let control = DispatchQueue(label: "wcr.sck.audio.control")
@@ -254,6 +273,7 @@ final class SCKAudioSource: NSObject, AudioCaptureSource, SCStreamOutput, SCStre
   private var onChunk: ((PCMChunk) -> Void)?
   private var retry: DispatchSourceTimer?
   private var running = false
+  private var attachFailureReported = false
 
   init(source: AudioSourceConfig, excludeBundlePrefix: String?) {
     self.source = source
@@ -264,22 +284,37 @@ final class SCKAudioSource: NSObject, AudioCaptureSource, SCStreamOutput, SCStre
     try SCK.requireScreenPermission()
     self.onChunk = onChunk
 
-    try control.sync {
+    control.sync {
       running = true
-      try attach()
+      tryAttach()
     }
 
-    // Application audio waits for the app to launch, and re-attaches if it
-    // restarts.
-    if source.kind == "app" {
-      let timer = DispatchSource.makeTimerSource(queue: control)
-      timer.schedule(deadline: .now() + 3, repeating: 3)
-      timer.setEventHandler { [weak self] in
-        guard let self, self.running, self.activeStream == nil else { return }
-        do { try self.attach() } catch { logWarn("App audio attach failed: \(error)") }
+    // Application audio waits for the app to launch and re-attaches if it
+    // restarts; any source re-attaches after a failed attach.
+    let timer = DispatchSource.makeTimerSource(queue: control)
+    timer.schedule(deadline: .now() + 3, repeating: 3)
+    timer.setEventHandler { [weak self] in
+      guard let self, self.running, self.activeStream == nil else { return }
+      self.tryAttach()
+    }
+    timer.resume()
+    retry = timer
+  }
+
+  /// Runs on `control`. Reports the first failure, then only logs.
+  private func tryAttach() {
+    do {
+      try attach()
+      attachFailureReported = false
+    } catch {
+      logWarn("Audio \(source.name) attach failed: \(error)")
+      if !attachFailureReported {
+        attachFailureReported = true
+        IO.emit([
+          "event": "error",
+          "message": "Audio source \(source.name) is not capturing yet, retrying: \(error)",
+        ])
       }
-      timer.resume()
-      retry = timer
     }
   }
 
@@ -361,7 +396,7 @@ final class SCKAudioSource: NSObject, AudioCaptureSource, SCStreamOutput, SCStre
       guard self.activeStream === stream else { return }
       self.activeStream = nil
       if self.running && self.source.kind != "app" {
-        do { try self.attach() } catch { logError("System audio re-attach failed: \(error)") }
+        self.tryAttach()
       }
     }
   }
@@ -372,35 +407,57 @@ final class SCKAudioSource: NSObject, AudioCaptureSource, SCStreamOutput, SCStre
 /// clock.
 final class MicSource: NSObject, AudioCaptureSource, AVCaptureAudioDataOutputSampleBufferDelegate {
   private let queue = DispatchQueue(label: "wcr.mic", qos: .userInteractive)
+  private let control = DispatchQueue(label: "wcr.mic.control")
   private let source: AudioSourceConfig
   private var session: AVCaptureSession?
   private var onChunk: ((PCMChunk) -> Void)?
+  private var stopped = false
+
+  static let deniedMessage =
+    "Microphone access is not allowed for Warcraft Recorder. Enable it in System Settings > Privacy & Security > Microphone."
 
   init(source: AudioSourceConfig) {
     self.source = source
   }
 
-  static func requireMicPermission() throws {
+  /// Never waits on the permission prompt: if the user has not decided yet,
+  /// the microphone starts once they allow it.
+  func start(onChunk: @escaping (PCMChunk) -> Void) throws {
+    self.onChunk = onChunk
+
     switch AVCaptureDevice.authorizationStatus(for: .audio) {
     case .authorized:
-      return
-    case .notDetermined:
-      let granted: Bool = try waitFor("microphone permission", timeout: 30) { done in
-        AVCaptureDevice.requestAccess(for: .audio) { ok in done(ok, nil) }
-      }
-      if granted { return }
-    default:
-      break
-    }
+      try control.sync { try startSession() }
 
-    throw HelperError.permission(
-      "Microphone access is not allowed for Warcraft Recorder. Enable it in System Settings > Privacy & Security > Microphone."
-    )
+    case .notDetermined:
+      logInfo("Waiting for microphone permission for \(source.name)")
+
+      AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+        guard let self else { return }
+
+        self.control.async {
+          guard !self.stopped else { return }
+
+          guard granted else {
+            IO.emit(["event": "error", "message": MicSource.deniedMessage])
+            return
+          }
+
+          do {
+            try self.startSession()
+          } catch {
+            IO.emit(["event": "error", "message": "Microphone \(self.source.name) failed: \(error)"])
+          }
+        }
+      }
+
+    default:
+      throw HelperError.permission(MicSource.deniedMessage)
+    }
   }
 
-  func start(onChunk: @escaping (PCMChunk) -> Void) throws {
-    try MicSource.requireMicPermission()
-
+  /// Runs on `control`.
+  private func startSession() throws {
     let wanted = source.device ?? "default"
     let device =
       (wanted == "default" ? nil : AVCaptureDevice(uniqueID: wanted))
@@ -434,15 +491,17 @@ final class MicSource: NSObject, AudioCaptureSource, AVCaptureAudioDataOutputSam
     }
     session.addOutput(output)
 
-    self.onChunk = onChunk
     self.session = session
     session.startRunning()
     logInfo("Capturing microphone '\(device.localizedName)' for \(source.name)")
   }
 
   func stop() {
-    session?.stopRunning()
-    session = nil
+    control.sync {
+      stopped = true
+      session?.stopRunning()
+      session = nil
+    }
     onChunk = nil
   }
 

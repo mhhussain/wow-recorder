@@ -156,7 +156,13 @@ open track1-all.m4a track2-mic.m4a
 - Config: `~/Library/Application Support/WarcraftRecorder/config-v3.json`.
 - Permission state: `wcr-capture probe` prints `"permissions"`. Note this reflects the permission of whatever launched it (Terminal when run by hand).
 
-Attach the newest log file (and the probe output if relevant) when reporting a failure.
+Attach the newest log file (and the probe output if relevant) when reporting a failure. To print just the relevant lines of the newest log:
+
+```bash
+grep -E "\[(Manager|Recorder|MacNoobs|Poller|wcr-capture|LogHandler)\]" "$(ls -t ~/Library/Logs/WarcraftRecorder/*.log | head -1)" | tail -300
+```
+
+The app starts a new log file each launch, so if you relaunched after the failure, use the second newest file (`head -2 | tail -1`).
 
 ## Results checklist
 

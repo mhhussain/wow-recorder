@@ -85,6 +85,7 @@ func waitFor<T>(
 ) throws -> T {
   let sem = DispatchSemaphore(value: 0)
   let box = ResultBox<T>()
+  let started = Date()
 
   body { value, error in
     box.set(value, error)
@@ -92,7 +93,14 @@ func waitFor<T>(
   }
 
   if sem.wait(timeout: .now() + timeout) == .timedOut {
+    logWarn("\(what) timed out after \(Int(timeout)) s")
     throw HelperError.timeout(what)
+  }
+
+  // Slow system calls are the usual suspect when starting takes too long.
+  let elapsed = Date().timeIntervalSince(started)
+  if elapsed > 2 {
+    logWarn("\(what) took \(String(format: "%.1f", elapsed)) s")
   }
 
   return try box.get(what)

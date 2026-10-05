@@ -7,7 +7,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - **Current phase:** 6 (verification and handoff): fixing on-device findings
 - **Last checkpoint tag:** `macos-port-phase-7-pvp` (local only; see blocker B-001 and the tag table below)
 - **Latest CI result:** run 37385424974 (commit 8ec4ea6) green: typecheck, lint, 77 tests passed (now including the 13 PvP scenarios, the owner's Murder Row log and the real `ps` check; 17 skipped are the full-log fidelity tests whose large logs CI deliberately leaves out), helper probe and self-test, build, package, smoke test PASS, artifact uploaded. Before that, run 37384710524 (4ad186f) failed on the refuted ps assertion and the missing fixture (D-010).
-- **Exact next step:** owner sends the app log covering the failed run (newest file in `~/Library/Logs/WarcraftRecorder/` from 2026-10-05 around 18:2x, or the lines containing `[Manager]`, `[Recorder]`, `[MacNoobs]`, `[Poller]`, `[wcr-capture]`) and, with WoW open, the output of `ps -axo comm= | grep -i warcraft`. Then installs the new build (MANUAL_TEST.md section 1), checks the status shows "Ready to record" with WoW open, and repeats the Mythic+ run (section 6).
+- **Exact next step:** after CI is green on the D-011 commit, owner installs the new build (MANUAL_TEST.md section 1, then section 2: reset and re-grant Screen Recording and Microphone, since the signature changed), opens WoW, checks the status shows "Ready to record", and repeats the Mythic+ run. If anything fails, send the output of the log command in MANUAL_TEST.md section 9.
 
 ## Phase checklist
 
@@ -50,6 +50,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ### On-device findings (owner)
 - [ ] 2026-10-05 Mythic+ (Murder Row +11): error "Buffer not started" at CHALLENGE_MODE_START, no video. The log pipeline worked (the fixture replays to a recording start); the recorder was not buffering. Root cause unknown: the first diagnosis (ps truncation, D-009) was refuted on the runner (D-010). Mitigations shipped: a fallback that starts the buffer at activity start instead of dropping the run, a report for unexpected buffer loss, and `[Poller] WoW processes` logging. Waiting on the owner's app log and re-test.
+- [ ] 2026-10-05 second run (new build): "Failed to start" (the helper did not confirm `start` within 30 s). WoW detection confirmed fine from the owner's `ps` output (WoW on `/Volumes/Dock`). Likely a capture setup step stalling (permission prompt after the signature change, or ScreenCaptureKit); buffer start no longer waits on any of it (D-011). Not confirmed which step: no log available.
 
 ### Phase 7 (optional, after MVP)
 - [x] Classic and Era: free (D-006); scenario tests pass for Classic raid, MoP challenge mode, Era raid

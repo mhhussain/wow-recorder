@@ -1069,7 +1069,10 @@ export default class Recorder extends EventEmitter {
       await Promise.race([
         this.startQueue.shift(),
         failed,
-        getPromiseBomb(30, 'Failed to start'),
+        getPromiseBomb(
+          30,
+          'Failed to start: the capture helper did not confirm within 30 s. The [wcr-capture] lines in the app log show which step was slow.',
+        ),
       ]);
     } finally {
       this.failPendingStart = undefined;

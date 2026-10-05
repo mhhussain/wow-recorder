@@ -19,6 +19,9 @@ final class Engine {
   static let audioTracks = 6
 
   let control = DispatchQueue(label: "wcr.control")
+  /// Audio captures start and stop here, in order, off `control`: starting
+  /// one can wait on ScreenCaptureKit, which must never delay startBuffer.
+  private let audioQueue = DispatchQueue(label: "wcr.audio.sources")
   private let factory: CaptureFactory
   private var config = EngineConfig.default
   private(set) var state = State.idle
@@ -146,7 +149,8 @@ final class Engine {
       {
         continue
       }
-      current.source.stop()
+      let source = current.source
+      audioQueue.async { source.stop() }
       mixer.removeInput(name)
       audioSources.removeValue(forKey: name)
       logInfo("Removed audio source \(name)")
@@ -162,14 +166,22 @@ final class Engine {
       let capture = factory.makeAudioSource(source, config: next)
       mixer.addInput(
         source.name, volume: source.volume, tracks: source.tracks, isMic: source.kind == "mic")
+      audioSources[source.name] = (source, capture)
 
-      do {
-        try capture.start { [weak self] chunk in self?.mixer.push(source.name, chunk) }
-        audioSources[source.name] = (source, capture)
-        logInfo("Added audio source \(source.name) (\(source.kind) \(source.device ?? "-"))")
-      } catch {
-        mixer.removeInput(source.name)
-        reportError("Audio source \(source.name) failed: \(error)")
+      audioQueue.async { [weak self] in
+        do {
+          try capture.start { [weak self] chunk in self?.mixer.push(source.name, chunk) }
+          logInfo("Added audio source \(source.name) (\(source.kind) \(source.device ?? "-"))")
+        } catch {
+          self?.reportError("Audio source \(source.name) failed: \(error)")
+
+          // Forget it so the next configure tries again.
+          self?.control.async {
+            guard let self, self.audioSources[source.name]?.source === capture else { return }
+            self.mixer.removeInput(source.name)
+            self.audioSources.removeValue(forKey: source.name)
+          }
+        }
       }
     }
   }
@@ -366,8 +378,9 @@ final class Engine {
   /// Stop everything, keeping any in-progress recording.
   func shutdown() {
     if state != .idle { stop(force: false) }
-    for (_, entry) in audioSources { entry.source.stop() }
+    let sources = audioSources.values.map { $0.source }
     audioSources.removeAll()
+    audioQueue.sync { sources.forEach { $0.stop() } }
   }
 
   /// Same naming as the libobs replay buffer ("%CCYY-%MM-%DD %hh-%mm-%ss"),
