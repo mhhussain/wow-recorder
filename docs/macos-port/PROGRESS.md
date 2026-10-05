@@ -4,10 +4,10 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Current state
 
-- **Current phase:** 5 (build and packaging); phase 4 code complete, awaiting CI
-- **Last checkpoint tag:** `macos-port-phase-3` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** run 37263777306 (commit 43fa1ec) cancelled by me: all tests passed but Jest did not exit (leaked FSEvents watcher, fixed in d4bf5f0). Last green: run 37263442479 (commit 9c3a608).
-- **Exact next step:** check the CI run for the packaging commit (package step, codesign verify, helper/ffmpeg from the bundle, artifact upload). Fix until green, then tag phases 4 and 5 and write MANUAL_TEST.md.
+- **Current phase:** 6 (verification and handoff): waiting on the owner's on-device test (MANUAL_TEST.md)
+- **Last checkpoint tag:** `macos-port-phase-5` (local only; see blocker B-001 and the tag table below)
+- **Latest CI result:** run 37264154520 (commit 0601506) green in 84 s: typecheck, lint, 52 unit tests (17 full-log tests skipped by design), helper build + probe + self-test, webpack build, package, signature/Info.plist/binary checks, artifact `WarcraftRecorder-macos-arm64-0601506…` (161 MB zip, artifact 11325498319, expires after 7 days).
+- **Exact next step:** owner runs `docs/macos-port/MANUAL_TEST.md` on the Mac and reports results/logs. Agent meanwhile: optional phase 7 (PvP scenario tests from the existing fixtures). Then fix whatever on-device testing finds.
 
 ## Phase checklist
 
@@ -28,9 +28,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [x] Decision recorded (D-004, D-005, D-006)
 
 ### Phase 4: macOS MVP implementation
-- [x] Quality gates green locally (tsc 0 errors, lint 0 errors, jest 27 tests)
+- [x] Quality gates green (tsc 0 errors, lint 0 errors, 70 jest tests locally; same gates in CI)
 - [x] `noobs` removed; `MacNoobs` shim + `CaptureHelper` client wired into Recorder (fail-fast start errors, VideoToolbox encoders and quality mapping); shim unit tests
-- [ ] Unit tests: log parsing and start/stop state machine for raids and M+ using real fixtures and a mocked recorder
 - [x] Log folder discovery (first run checks /Applications and ~/Applications for `World of Warcraft/_retail_|_classic_/Logs`; default storage ~/Movies/Warcraft Recorder; missing `.flavor.info` accepted)
 - [x] Robust log tailing on macOS (stat-driven reads, inode/truncation detection, partial-line carry-over, 1 s poll backstop; tests)
 - [x] WoW process detection (`ps` poller, flavour by install folder, WCR_FAKE_WOW for testing; tests)
@@ -39,21 +38,29 @@ Single source of truth for resuming. Update before every checkpoint commit.
 - [x] Windows-only features disabled or removed: AppUpdater, explorer.exe, rust-ps.exe, Windows search paths, unconditional uiohook start (now lazy and guarded, needs Accessibility), tray icon sized for the menu bar
 
 ### Phase 5: build
-- [ ] electron-builder arm64 `.app`, Info.plist usage strings, ad-hoc signing (config + afterPack hook written, D-007; awaiting CI)
-- [ ] CI uploads the packaged app as an artifact (steps written; awaiting CI)
-- [ ] Run-from-source fallback documented
+- [x] electron-builder arm64 `.app`, Info.plist usage strings, ad-hoc signing (D-007; verified in CI: codesign valid, DR satisfied)
+- [x] CI uploads the packaged app as an artifact (ditto zip, 7-day retention)
+- [x] Run-from-source fallback documented (MANUAL_TEST.md section 1C)
 
 ### Phase 6: verification and handoff
-- [ ] Tests and CI green
-- [ ] `MANUAL_TEST.md` complete
-- [ ] Final status report
+- [x] Tests and CI green
+- [x] `MANUAL_TEST.md` complete
+- [ ] On-device verification by the owner (MANUAL_TEST.md results checklist)
+- [x] Final status report (end of session 1, below)
 
 ### Phase 7 (optional, after MVP)
-- [ ] Classic (if not already free), PvP triggers, secondary features
+- [x] Classic and Era: free (D-006); scenario tests pass for Classic raid, MoP challenge mode, Era raid
+- [ ] PvP triggers: code is unchanged and platform-agnostic (arena/BG/shuffle activity unit tests pass); no PvP scenario tests on the fixture logs yet
+- [ ] Secondary features: preview/scene editor, chat overlay, cloud (untouched), viewer polish
 
 ## Last session
 
-- 2026-10-05: phases 1-3 complete. Orientation and agent files; ANALYSIS.md; backend decision with the Swift helper green on the runner. Jest config groundwork in progress (Electron, electron-store and uiohook stubs).
+- 2026-10-05 (session 1): phases 1-5 complete, phase 6 waiting on the owner.
+  - Backend: Swift ScreenCaptureKit helper (`native/wcr-capture`) + `MacNoobs` shim replacing `noobs`; Recorder call sites unchanged.
+  - macOS plumbing: ps poller, FSEvents-safe log watcher, permissions, lazy input hook, /Applications discovery, logs in ~/Library/Logs, Finder.
+  - Tests: 70 jest tests incl. 18 scenario tests on real log excerpts (raids, M+, Classic, Era) and full-log fidelity tests.
+  - CI: one workflow, 84 s warm, produces a signed arm64 app artifact.
+  - Found and fixed along the way: Electron 44 ABI unknown to node-abi 4.31 (CI npm ci), FSEvents watcher leak hanging Jest on macOS, logs written inside the signed bundle, upstream tests stale (wrong constructor arity, hardcoded year).
 
 ## Open blockers (waiting on owner)
 
@@ -66,7 +73,9 @@ Single source of truth for resuming. Update before every checkpoint commit.
 | --- | --- | --- |
 | `macos-port-phase-1` | `414af9a` | no (B-001) |
 | `macos-port-phase-2` | `874fcf2` | no (B-001) |
-| `macos-port-phase-3` | see `git log --grep '\[phase-3\] record backend decision'` | no (B-001) |
+| `macos-port-phase-3` | `c3884ea` | no (B-001) |
+| `macos-port-phase-4` | `d4bf5f0` | no (B-001) |
+| `macos-port-phase-5` | `0601506` | no (B-001) |
 
 ## In-flight experiments
 
@@ -74,7 +83,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ## Verified vs assumed
 
-- Verified on the runner: helper compiles against SDK 27; VideoToolbox H.264/HEVC hardware sessions with constant quality; ScreenCaptureKit audio/mic config surface exists; synthetic end-to-end recording (buffer, convert with offset, six-track mix, fragmented MP4, stop/force-stop) produces correct files; ffmpeg-static arm64 decodes them; ffmpeg avfoundation exposes no system audio device.
-- Verified locally: baseline gate failures; jest now loads suites that do not import `noobs`.
-- Assumed (not testable in CI because of TCC): real ScreenCaptureKit capture of the WoW window, system/app audio, microphones; TCC attribution of the helper to the app.
+- **Verified on the runner (CI):** helper compiles against SDK 27; VideoToolbox H.264/HEVC hardware sessions with constant quality; ScreenCaptureKit audio/mic config surface exists; synthetic end-to-end recording through the real engine and command protocol (buffer, convert with offset, convert before first frame, six-track mix with expected per-track levels, fragmented MP4, stop, force stop) produces correct files that ffmpeg decodes; ffmpeg avfoundation exposes no system audio device; log watcher tests on FSEvents; packaged app signature valid, Info.plist strings present, bundled helper and ffmpeg execute.
+- **Verified by unit tests (real combat logs, mocked recorder):** raid/M+/Classic/Era start, stop, keep/discard and naming match upstream's integration expectations; excerpts are faithful to the full logs; Poller flavour detection; shim config mapping, command ordering, crash recovery.
+- **Not verified (needs the owner, TCC-gated):** real ScreenCaptureKit capture of the WoW window and display; system, app and microphone audio in real recordings; TCC attribution of the helper process to WarcraftRecorder.app; permission behaviour across ad-hoc rebuilds; A/V sync under load; whether the Mac WoW client writes `.flavor.info`; WoW bundle ID/app name assumptions (`com.blizzard.worldofwarcraft*`, "World of Warcraft*"); the app UI end to end (never launched in CI to avoid permission prompts on the owner's desktop).
+- **Known gaps (by design, D-004):** no live preview/scene editor, no chat overlay compositing, noise suppression is a noise gate, no output-device selection for system audio.
 - Runner facts: two 3440x1440 displays; mics include a BY-PM700 and Realtek USB audio.
