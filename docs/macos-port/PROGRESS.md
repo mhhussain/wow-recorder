@@ -6,7 +6,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 - **Current phase:** 6 (verification and handoff): MVP confirmed on device (Mythic+ recorded, 2026-10-05); polishing from on-device findings
 - **Last checkpoint tag:** `macos-port-phase-7-pvp` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** pending for the D-012 commit (chat overlay, Pro gate, Poller ordering). Previous: run 37388765234 (fa09130) green.
+- **Latest CI result:** run 37398293382 (commit dae07bd, D-012) green: typecheck, lint, 80 tests passed (17 skipped are the full-log fidelity tests whose large logs CI deliberately leaves out), helper self-test pass including the overlay pixel check (inside the overlay RGB 255,1,0; below and left 73,73,73), package, smoke test PASS, artifact uploaded.
 - **Exact next step:** owner installs the D-012 build (MANUAL_TEST.md section 1), checks the chat overlay (section 7b) and that closing WoW returns the status to "Waiting for WoW" without the helper retrying the WoW window, then continues normal use (raids, keys) and reports anything odd with the log command in section 9.
 
 ## Phase checklist
