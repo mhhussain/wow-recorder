@@ -74,8 +74,14 @@ test('emits started/stopped only for flavours configured to record', () => {
 
   const poller = Poller.getInstance();
   const events: string[] = [];
-  poller.on(WowProcessEvent.STARTED, () => events.push('started'));
-  poller.on(WowProcessEvent.STOPPED, () => events.push('stopped'));
+  // Handlers see the new state (ending an activity on WoW exit must not
+  // re-arm the buffer).
+  poller.on(WowProcessEvent.STARTED, () =>
+    events.push(`started ${poller.isWowRunning()}`),
+  );
+  poller.on(WowProcessEvent.STOPPED, () =>
+    events.push(`stopped ${poller.isWowRunning()}`),
+  );
 
   process.env.WCR_FAKE_WOW = 'classic';
   poller.start(); // Classic running but not configured: nothing.
@@ -89,6 +95,6 @@ test('emits started/stopped only for flavours configured to record', () => {
   // Late results after stop are ignored.
   poller.handleProcessState({ Retail: true, Classic: false });
 
-  expect(events).toEqual(['started', 'stopped']);
+  expect(events).toEqual(['started true', 'stopped false']);
   delete process.env.WCR_FAKE_WOW;
 });

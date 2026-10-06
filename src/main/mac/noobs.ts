@@ -1,5 +1,5 @@
 import path from 'path';
-import { app, screen } from 'electron';
+import { app, nativeImage, screen } from 'electron';
 import CaptureHelper from './CaptureHelper';
 import MacNoobs from './MacNoobs';
 
@@ -27,6 +27,15 @@ const getDisplays = () =>
     };
   });
 
+/**
+ * Pixel size of the chat overlay image (PNG, JPEG, GIF), or null if it
+ * cannot be read.
+ */
+const getImageSize = (file: string) => {
+  const size = nativeImage.createFromPath(file).getSize();
+  return size.width > 0 && size.height > 0 ? size : null;
+};
+
 const noobs = new MacNoobs({
   transport: new CaptureHelper(binary),
   // Excluded from system audio so the app's own playback is not recorded.
@@ -34,6 +43,7 @@ const noobs = new MacNoobs({
     ? 'org.WarcraftRecorder'
     : 'com.github.Electron',
   getDisplays,
+  getImageSize,
 });
 
 export default noobs;

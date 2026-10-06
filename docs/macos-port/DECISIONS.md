@@ -99,3 +99,14 @@ Each entry: date, context, options considered, choice, reasoning. Never edit pas
   - A missing Screen Recording permission still fails `startBuffer` immediately (fast preflight), with the existing message.
   - Every waited system call that takes over 2 s, or times out, is logged by name (`[wcr-capture] ... took N s`), and the 30 s timeout message points at those lines.
 - Trade-off: a recording can now begin with black frames or no audio while capture attaches, instead of failing to start. Error reports say so.
+
+## D-012 (2026-10-06) Chat overlay drawn by the helper; Pro gate removed
+
+- Context: the owner's third run recorded a Mythic+ key end to end. The owner asked to remove the Pro (paid cloud tier) requirement for using their own chat overlay image. On macOS no overlay was drawn at all (D-004 listed it as a gap), so removing the gate alone would have changed nothing in recordings.
+- Choice:
+  - Pro gate removed: the "own image" switch only needs the overlay enabled, no lock icon, cloud settings no longer switch it off, and the "Pro users only" sentence is gone from the descriptions in all four languages. The main process never checked Pro.
+  - The helper draws the overlay: `EngineConfig.overlay` (path, x, y, scale, cropX, cropY; canvas pixels, top-left origin, crop per side in image pixels, as an OBS scene item). `OverlayCompositor` loads the first frame of any ImageIO format (PNG, JPEG, GIF), places it with Core Image and renders frame plus overlay on the GPU into pooled buffers before encoding. Without an overlay, frames pass through untouched. A bad image path or crop turns the overlay off with an error report.
+  - `MacNoobs` maps the in-scene `image_source` to `overlay`, re-sends config when its position changes (it did not before), and reports the image's real size (Electron `nativeImage`).
+  - No live preview means no dragging: Settings gets X, Y, scale and crop sliders. They go through the existing `setSourcePosition` path, which saves to config; `Recorder` treats a zero-width preview as a 1:1 scale instead of dividing by zero (the old crop sliders would have written NaN positions).
+  - Verified by the helper self-test: a red PNG placed at (100, 50) on a 640x360 recording decodes red inside the overlay and not below or left of it.
+- Also from that run's log: WoW closing ended the activity and then restarted the buffer, which kept looking for the WoW window every 3 s. The Poller emitted STOPPED before updating `isWowRunning()`; it now updates first.

@@ -27,6 +27,7 @@ final class Engine {
   private(set) var state = State.idle
 
   private let mixer = AudioMixer()
+  private let overlay = OverlayCompositor()
   private let buffer = MediaBuffer()
   private var encoder: VideoEncoder?
   private var pacer: FramePacer?
@@ -132,6 +133,12 @@ final class Engine {
 
     reconcileAudio(next)
 
+    do {
+      try overlay.update(next.overlay, canvasHeight: next.height)
+    } catch {
+      reportError("Chat overlay is off: \(error)")
+    }
+
     if state != .idle && previous.video != next.video {
       logInfo("Video target changed while active, restarting video capture")
       restartVideoSource()
@@ -207,9 +214,10 @@ final class Engine {
 
       self.encoder = encoder
       buffer.reset()
+      let overlay = self.overlay
       pacer = try FramePacer(fps: config.fps, width: config.width, height: config.height) {
         pixelBuffer, pts, duration in
-        encoder.encode(pixelBuffer, pts: pts, duration: duration)
+        encoder.encode(overlay.apply(pixelBuffer), pts: pts, duration: duration)
       }
 
       try startVideoSource()

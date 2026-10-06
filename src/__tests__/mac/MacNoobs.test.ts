@@ -146,6 +146,75 @@ test('builds the helper config from the scene', () => {
   });
 });
 
+test('the chat overlay image goes to the helper with its position', async () => {
+  const { noobs, transport } = setup();
+  noobs.ResetVideoContext(60, 1920, 1080);
+  const overlay = noobs.CreateSource('WCR Chat Overlay', 'image_source');
+
+  // Not in the scene: no overlay.
+  expect(noobs.buildConfig().overlay).toBeUndefined();
+
+  noobs.SetSourceSettings(overlay, { file: '/images/chat.png' });
+  noobs.AddSourceToScene(overlay);
+  await tick();
+  transport.sent = [];
+
+  // Moving it alone must reach the helper (the sliders only do this).
+  noobs.SetSourcePos(overlay, {
+    x: 40,
+    y: 700,
+    scaleX: 0.5,
+    scaleY: 0.5,
+    cropLeft: 10,
+    cropRight: 10,
+    cropTop: 4,
+    cropBottom: 4,
+  });
+  await tick();
+
+  expect(transport.commands()).toEqual(['configure']);
+  expect(noobs.buildConfig().overlay).toEqual({
+    path: '/images/chat.png',
+    x: 40,
+    y: 700,
+    scale: 0.5,
+    cropX: 10,
+    cropY: 4,
+  });
+
+  noobs.RemoveSourceFromScene(overlay);
+  expect(noobs.buildConfig().overlay).toBeUndefined();
+});
+
+test('an image source reports its own size', () => {
+  const transport = new FakeTransport();
+
+  const noobs = new MacNoobs({
+    transport,
+    excludeBundlePrefix: 'org.WarcraftRecorder',
+    getDisplays: () => [],
+    getImageSize: (file) =>
+      file === '/images/chat.png' ? { width: 400, height: 300 } : null,
+  });
+
+  noobs.Init('', '', () => {});
+  noobs.ResetVideoContext(60, 1920, 1080);
+
+  const overlay = noobs.CreateSource('WCR Chat Overlay', 'image_source');
+  noobs.SetSourceSettings(overlay, { file: '/images/chat.png' });
+  expect(noobs.GetSourcePos(overlay)).toMatchObject({
+    width: 400,
+    height: 300,
+  });
+
+  // Unreadable image, or a capture: the canvas size.
+  noobs.SetSourceSettings(overlay, { file: '/images/missing.png' });
+  expect(noobs.GetSourcePos(overlay)).toMatchObject({
+    width: 1920,
+    height: 1080,
+  });
+});
+
 test('monitor capture targets the configured display', () => {
   const { noobs } = setup();
   const monitor = noobs.CreateSource('WCR Monitor Capture', 'monitor_capture');

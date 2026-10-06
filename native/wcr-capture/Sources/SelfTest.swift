@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import ImageIO
 
 /// `wcr-capture selftest <dir>`: drives the real Engine (encoder, mixer,
 /// replay buffer, writer, command handling) with synthetic video and audio
@@ -199,10 +200,98 @@ enum SelfTest {
     return try box.get("inspect")
   }
 
+  /// Write a solid-color PNG (for the overlay check).
+  static func writePNG(path: String, width: Int, height: Int, red: CGFloat, green: CGFloat, blue: CGFloat)
+    throws
+  {
+    guard
+      let context = CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { throw HelperError.failed("CGContext failed") }
+
+    context.setFillColor(red: red, green: green, blue: blue, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+    guard let image = context.makeImage(),
+      let destination = CGImageDestinationCreateWithURL(
+        URL(fileURLWithPath: path) as CFURL, "public.png" as CFString, 1, nil)
+    else { throw HelperError.failed("PNG encode failed") }
+
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+      throw HelperError.failed("PNG write failed")
+    }
+  }
+
+  /// RGB of the given top-left-origin pixels in one decoded frame of the
+  /// file's video track.
+  static func samplePixels(_ path: String, at points: [(x: Int, y: Int)]) throws -> [[Int]] {
+    let box = ResultBox<[[Int]]>()
+    let sem = DispatchSemaphore(value: 0)
+
+    Task {
+      do {
+        let asset = AVURLAsset(url: URL(fileURLWithPath: path))
+        guard let track = try await asset.loadTracks(withMediaType: .video).first else {
+          throw HelperError.failed("no video track")
+        }
+
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(
+          track: track,
+          outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA])
+        reader.add(output)
+        reader.startReading()
+
+        // Keep one frame about half a second in; holding every decoded
+        // frame could starve the reader.
+        var chosen: CMSampleBuffer?
+        var index = 0
+        while let sample = output.copyNextSampleBuffer() {
+          if index <= 15 { chosen = sample }
+          index += 1
+        }
+
+        guard let chosen, let pixels = CMSampleBufferGetImageBuffer(chosen) else {
+          throw HelperError.failed("no decoded frames")
+        }
+
+        CVPixelBufferLockBaseAddress(pixels, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
+
+        guard let base = CVPixelBufferGetBaseAddress(pixels) else {
+          throw HelperError.failed("no pixel data")
+        }
+
+        let stride = CVPixelBufferGetBytesPerRow(pixels)
+        let bytes = base.assumingMemoryBound(to: UInt8.self)
+
+        let result = points.map { point -> [Int] in
+          let offset = point.y * stride + point.x * 4
+          // BGRA
+          return [Int(bytes[offset + 2]), Int(bytes[offset + 1]), Int(bytes[offset])]
+        }
+
+        box.set(result, nil)
+      } catch {
+        box.set(nil, error)
+      }
+      sem.signal()
+    }
+
+    sem.wait()
+    return try box.get("samplePixels")
+  }
+
   static func configJSON(
-    directory: String, encoder: String, width: Int, height: Int, fps: Int
+    directory: String, encoder: String, width: Int, height: Int, fps: Int,
+    overlay: String? = nil
   ) -> String {
-    """
+    let overlayField = overlay.map { "\"overlay\": \($0)," } ?? ""
+
+    return """
     {"outputDir": "\(directory)", "fps": \(fps), "width": \(width), "height": \(height),
      "encoder": "\(encoder)", "quality": 0.6,
      "video": {"kind": "wow", "showCursor": false},
@@ -210,6 +299,7 @@ enum SelfTest {
        {"name": "WCR Audio Source 1", "kind": "system", "device": "default", "volume": 1, "tracks": 1},
        {"name": "WCR Audio Source 2", "kind": "mic", "device": "default", "volume": 0.5, "tracks": 3}
      ],
+     \(overlayField)
      "forceMono": true, "suppression": false, "muteInputs": false,
      "excludeBundlePrefix": "org.WarcraftRecorder", "bufferSeconds": 60}
     """
@@ -324,6 +414,42 @@ enum SelfTest {
     _ = send(#"{"id": 10, "cmd": "forceStop"}"#)
     let forced = signals.wait(for: "deactivate")
     check("force-stop", (forced?["path"] as? String) == "", "expected empty path")
+
+    // Chat overlay: a solid red 200x100 PNG with its top-left corner at
+    // (100, 50) on a 640x360 canvas of gray frames (and a moving white bar).
+    do {
+      let png = (directory as NSString).appendingPathComponent("overlay-test.png")
+      try writePNG(path: png, width: 200, height: 100, red: 1, green: 0, blue: 0)
+      let overlay =
+        #"{"path": "\#(png)", "x": 100, "y": 50, "scale": 1, "cropX": 0, "cropY": 0}"#
+      let config = configJSON(
+        directory: directory, encoder: Encoders.h264, width: 640, height: 360, fps: 30,
+        overlay: overlay)
+
+      _ = send(#"{"id": 11, "cmd": "configure", "config": "# + config + "}")
+      _ = send(#"{"id": 12, "cmd": "startBuffer"}"#)
+      check("overlay", signals.wait(for: "start") != nil, "no start signal")
+      Thread.sleep(forTimeInterval: 1.5)
+      _ = send(#"{"id": 13, "cmd": "convert", "offset": 1}"#)
+      _ = signals.wait(for: "converted", timeout: 5)
+      Thread.sleep(forTimeInterval: 1.5)
+      _ = send(#"{"id": 14, "cmd": "stop"}"#)
+      let path = signals.wait(for: "deactivate")?["path"] as? String ?? ""
+      check("overlay", !path.isEmpty, "no file")
+
+      if !path.isEmpty {
+        // Inside the overlay; below it (would be red if y were flipped);
+        // left of it.
+        let rgb = try samplePixels(path, at: [(150, 100), (150, 250), (50, 100)])
+        results.append(["name": "overlay", "path": path, "rgb": rgb])
+        let isRed = { (p: [Int]) in p[0] > 180 && p[1] < 90 && p[2] < 90 }
+        check("overlay", isRed(rgb[0]), "inside not red: \(rgb[0])")
+        check("overlay", !isRed(rgb[1]), "below is red: \(rgb[1])")
+        check("overlay", !isRed(rgb[2]), "left is red: \(rgb[2])")
+      }
+    } catch {
+      failures.append("overlay: \(error)")
+    }
 
     engine.control.sync { engine.shutdown() }
     IO.observer = nil

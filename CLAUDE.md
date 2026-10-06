@@ -101,7 +101,8 @@ Kept current as work lands. See DECISIONS.md for reasoning.
 - `tsc` npm package (unrelated to TypeScript, shadowed its binary): removed.
 - Window-finding/attach polling in `Recorder` (`[Wow.exe]` window names): replaced; the helper finds and follows the WoW window.
 - `src/renderer/CrashStatus.tsx`: deleted (dead file importing a type that no longer exists).
-- Native preview and scene editor: shim accepts the calls and does nothing (no macOS preview, D-004).
+- Native preview and scene editor: shim accepts the calls and does nothing (no macOS preview, D-004). The chat overlay is placed with sliders instead and drawn by the helper (D-012).
+- Pro (paid cloud) requirement for an own chat overlay image: removed (D-012).
 - `AppUpdater` (electron-updater against upstream's Windows releases): removed.
 - `uIOhook.start()` at launch: now `src/main/inputHook.ts`, started only for push to talk, manual hotkey or hotkey binding (needs Accessibility on macOS).
 - Windows WoW install search paths and `explorer.exe`: replaced with /Applications discovery and Finder (`shell.showItemInFolder` / `openPath`).

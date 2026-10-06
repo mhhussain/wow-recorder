@@ -1666,7 +1666,8 @@ export default class Recorder extends EventEmitter {
     const previewInfo = this.getDisplayInfo(); // Could be cached
     const sfx = previewInfo.previewWidth / previewInfo.canvasWidth;
     const sfy = previewInfo.previewHeight / previewInfo.canvasHeight;
-    const sf = Math.min(sfx, sfy);
+    // No preview on macOS (width 0): work in canvas pixels.
+    const sf = Math.min(sfx, sfy) || 1;
 
     const src =
       item === SceneItem.OVERLAY ? this.overlaySource : this.captureSource;
@@ -1724,7 +1725,8 @@ export default class Recorder extends EventEmitter {
     //      based on the aspect ratio.
     const sfx = previewInfo.previewWidth / previewInfo.canvasWidth;
     const sfy = previewInfo.previewHeight / previewInfo.canvasHeight;
-    const sf = Math.min(sfx, sfy);
+    // No preview on macOS (width 0): work in canvas pixels.
+    const sf = Math.min(sfx, sfy) || 1;
 
     // We only allow one scale factor to retail the aspect ratio of
     // the source so just use the X.

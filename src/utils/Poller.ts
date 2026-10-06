@@ -234,12 +234,14 @@ export default class Poller extends EventEmitter {
       return;
     }
 
+    // Update before emitting: handlers ask isWowRunning(), e.g. ending an
+    // activity on WoW exit decides whether to re-arm the buffer.
+    this.wowRunning = running;
+
     if (running) {
       this.emit(WowProcessEvent.STARTED);
     } else {
       this.emit(WowProcessEvent.STOPPED);
     }
-
-    this.wowRunning = running;
   }
 }

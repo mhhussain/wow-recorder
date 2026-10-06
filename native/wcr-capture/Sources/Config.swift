@@ -24,6 +24,19 @@ struct AudioSourceConfig: Codable, Equatable {
   var tracks: Int
 }
 
+/// Chat overlay image drawn over every frame. Coordinates are canvas pixels
+/// with a top-left origin, like an OBS scene item: `cropX`/`cropY` (image
+/// pixels, each side) are removed first, then the image is scaled, then its
+/// top-left corner is placed at (`x`, `y`).
+struct OverlayConfig: Codable, Equatable {
+  var path: String
+  var x: Double
+  var y: Double
+  var scale: Double
+  var cropX: Double
+  var cropY: Double
+}
+
 /// Full desired state, sent by the Electron side on every change.
 struct EngineConfig: Codable, Equatable {
   var outputDir: String
@@ -39,6 +52,7 @@ struct EngineConfig: Codable, Equatable {
   var muteInputs: Bool
   var excludeBundlePrefix: String?
   var bufferSeconds: Double
+  var overlay: OverlayConfig?
 
   static let `default` = EngineConfig(
     outputDir: "",
@@ -53,7 +67,8 @@ struct EngineConfig: Codable, Equatable {
     suppression: false,
     muteInputs: false,
     excludeBundlePrefix: nil,
-    bufferSeconds: 60)
+    bufferSeconds: 60,
+    overlay: nil)
 }
 
 /// Encoder identifiers exposed to the app. They match the libobs

@@ -52,6 +52,14 @@ export type EngineConfig = {
   muteInputs: boolean;
   excludeBundlePrefix: string;
   bufferSeconds: number;
+  overlay?: {
+    path: string;
+    x: number;
+    y: number;
+    scale: number;
+    cropX: number;
+    cropY: number;
+  };
 };
 
 type SourceState = {
@@ -71,6 +79,9 @@ export type MacNoobsOptions = {
 
   /** Displays in Electron's screen.getAllDisplays() order (monitorIndex). */
   getDisplays: () => { id: number; label: string }[];
+
+  /** Pixel size of an image file, for the chat overlay. */
+  getImageSize?: (file: string) => { width: number; height: number } | null;
 };
 
 const defaultPosition = (): SceneItemPosition => ({
@@ -425,12 +436,22 @@ export default class MacNoobs {
   }
 
   public GetSourcePos(name: string): SceneItemPosition & SourceDimensions {
-    // The helper scales captures to fill the canvas.
-    return { ...this.get(name).pos, width: this.width, height: this.height };
+    const source = this.get(name);
+    const file = source.type === 'image_source' ? source.settings.file : '';
+
+    // An image reports its own size; the helper scales captures to fill
+    // the canvas.
+    const size = (file && this.opts.getImageSize?.(String(file))) || {
+      width: this.width,
+      height: this.height,
+    };
+
+    return { ...source.pos, ...size };
   }
 
   public SetSourcePos(name: string, pos: SceneItemPosition) {
     this.get(name).pos = { ...pos };
+    this.markDirty();
   }
 
   // Preview: not available on macOS.
@@ -517,6 +538,20 @@ export default class MacNoobs {
       });
     });
 
+    // The chat overlay: an image source in the scene, drawn by the helper.
+    const image = inScene.find(
+      ([, s]) => s.type === 'image_source' && s.settings.file,
+    );
+
+    const overlay = image && {
+      path: String(image[1].settings.file),
+      x: image[1].pos.x,
+      y: image[1].pos.y,
+      scale: image[1].pos.scaleX,
+      cropX: image[1].pos.cropLeft,
+      cropY: image[1].pos.cropTop,
+    };
+
     return {
       outputDir: this.outputDir,
       fps: this.fps,
@@ -531,6 +566,7 @@ export default class MacNoobs {
       muteInputs: this.muteInputs,
       excludeBundlePrefix: this.opts.excludeBundlePrefix,
       bufferSeconds: 60,
+      ...(overlay ? { overlay } : {}),
     };
   }
 

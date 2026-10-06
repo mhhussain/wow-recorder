@@ -139,6 +139,14 @@ To confirm game audio and microphone separately, route the Microphone source to 
 open track1-all.m4a track2-mic.m4a
 ```
 
+## 7b. Chat overlay
+
+1. Settings > Video: enable Chat Overlay. Optionally enable Own Image and pick a PNG, JPEG or GIF (first frame) file.
+2. There is no live preview on macOS: place the overlay with the Position X / Position Y sliders (canvas pixels from the top-left), Scale, and Crop X / Crop Y (image pixels removed from each side).
+3. Record anything (a fake-WoW test from section 4 is enough).
+
+Pass: the overlay appears in the saved video where the sliders put it.
+
 ## 8. Things to try if something is off
 
 | Symptom | Check |
@@ -150,6 +158,7 @@ open track1-all.m4a track2-mic.m4a
 | No game audio | Screen Recording covers system audio; reset and re-grant. If using an Application source, pick "World of Warcraft (any client)". |
 | No microphone | System Settings > Privacy & Security > Microphone; check the selected device in Audio settings. |
 | Recording never starts in a raid | Combat logging must be on; check that `WoWCombatLog-*.txt` grows in the Logs folder. Check "Record raids" and the minimum difficulty. |
+| Chat overlay missing from videos | It must be enabled with a readable image; an error report "Chat overlay is off" names the problem. Positions are in canvas pixels, so a large X/Y can push it off screen. |
 | Helper self-test | `~/Applications/WarcraftRecorder.app/Contents/Resources/binaries/wcr-capture selftest /tmp/wcr-selftest` must print `"selftest":"pass"` (needs no permissions). |
 
 ## 9. Collect logs
