@@ -6,7 +6,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 - **Current phase:** 6 (verification and handoff): MVP confirmed on device (Mythic+ recorded, 2026-10-05); polishing from on-device findings
 - **Last checkpoint tag:** `macos-port-phase-7-pvp` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** pending for the D-013 commit (centered capture, native window buttons, death marker offset). Previous: run 37398293382 (dae07bd) green.
+- **Latest CI result:** run 37717337214 (commit 0f9e6b5, D-013) green: typecheck, lint, 80 tests passed (17 skipped are the full-log fidelity tests whose large logs CI deliberately leaves out), helper self-test pass including the letterbox check (21:9 capture on a 16:9 canvas: black 0,0,0 above and below, picture 73,73,73 centered) and the overlay check, package, smoke test PASS, artifact uploaded. Later commits are docs only.
 - **Exact next step:** owner installs the D-013 build, sets Canvas Resolution to 3440x1440 or 2560x1080 (no bars) or keeps 16:9 (centered bars), sets "Show Deaths" to "All" in the viewer, and checks the traffic-light buttons. Cloud self-hosting guide: `docs/macos-port/CLOUD_SELF_HOSTING.md`.
 
 ## Phase checklist
