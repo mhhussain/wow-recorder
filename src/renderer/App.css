@@ -113,10 +113,6 @@ div#root {
   font-weight: bold;
 }
 
-#title-bar-btns {
-  -webkit-app-region: no-drag;
-}
-
 #navigator {
   color: white;
 }

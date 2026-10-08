@@ -288,6 +288,12 @@ describe('retail mythic+', () => {
     expect(names(queue.queued)).toEqual([
       'Rainbowlight - Murder Row +11 (Abandoned)',
     ]);
+
+    // The owner died 60 s into the key; the marker sits 2 s earlier.
+    const [death] = queue.queued[0].metadata.deaths ?? [];
+    expect(death.name).toBe('Rainbowlight-Mannoroth-US');
+    expect(death.friendly).toBe(true);
+    expect(death.timestamp).toBeCloseTo(58, 3);
   });
 
   test('keys below the minimum level are not recorded', async () => {

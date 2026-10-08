@@ -14,10 +14,14 @@ enum SelfTest {
     private var buffers: [CVPixelBuffer] = []
     private var frame = 0
     private var onFrame: ((CVPixelBuffer) -> Void)?
+    private let size: (width: Int, height: Int)?
+
+    init(size: (width: Int, height: Int)?) { self.size = size }
 
     func start(config: EngineConfig, onFrame: @escaping (CVPixelBuffer) -> Void) throws {
       for _ in 0..<6 {
-        let buffer = try PixelBuffers.make(width: config.width, height: config.height)
+        let buffer = try PixelBuffers.make(
+          width: size?.width ?? config.width, height: size?.height ?? config.height)
         buffers.append(buffer)
       }
       self.onFrame = onFrame
@@ -79,8 +83,11 @@ enum SelfTest {
     }
   }
 
-  struct SyntheticFactory: CaptureFactory {
-    func makeVideoSource() -> VideoFrameSource { SyntheticVideoSource() }
+  final class SyntheticFactory: CaptureFactory {
+    /// Size of the synthetic capture; the canvas size when nil.
+    var frameSize: (width: Int, height: Int)?
+
+    func makeVideoSource() -> VideoFrameSource { SyntheticVideoSource(size: frameSize) }
 
     func makeAudioSource(_ source: AudioSourceConfig, config: EngineConfig) -> AudioCaptureSource {
       SyntheticAudioSource(frequency: source.kind == "mic" ? 880 : 440)
@@ -311,7 +318,8 @@ enum SelfTest {
 
     let signals = Signals()
     IO.observer = { signals.add($0) }
-    let engine = Engine(factory: SyntheticFactory())
+    let factory = SyntheticFactory()
+    let engine = Engine(factory: factory)
     var failures: [String] = []
     var results: [[String: Any]] = []
 
@@ -449,6 +457,42 @@ enum SelfTest {
       }
     } catch {
       failures.append("overlay: \(error)")
+    }
+
+    // Letterboxing: a 21:9 capture on a 16:9 canvas is centered with even
+    // black bars (ScreenCaptureKit's own scaling pinned it to the top).
+    let fit = FrameCompositor.fit(CGSize(width: 3440, height: 1440), width: 1920, height: 1080)
+    check("fit", fit == CGRect(x: 0, y: 138, width: 1920, height: 804), "fit \(fit)")
+
+    do {
+      factory.frameSize = (640, 274)
+      defer { factory.frameSize = nil }
+
+      let config = configJSON(
+        directory: directory, encoder: Encoders.h264, width: 640, height: 360, fps: 30)
+
+      _ = send(#"{"id": 15, "cmd": "configure", "config": "# + config + "}")
+      _ = send(#"{"id": 16, "cmd": "startBuffer"}"#)
+      check("letterbox", signals.wait(for: "start") != nil, "no start signal")
+      Thread.sleep(forTimeInterval: 1.5)
+      _ = send(#"{"id": 17, "cmd": "convert", "offset": 1}"#)
+      _ = signals.wait(for: "converted", timeout: 5)
+      Thread.sleep(forTimeInterval: 1.5)
+      _ = send(#"{"id": 18, "cmd": "stop"}"#)
+      let path = signals.wait(for: "deactivate")?["path"] as? String ?? ""
+      check("letterbox", !path.isEmpty, "no file")
+
+      if !path.isEmpty {
+        // Picture rows 43...316 of 360: above, below, and inside it.
+        let rgb = try samplePixels(path, at: [(320, 20), (320, 340), (100, 180)])
+        results.append(["name": "letterbox", "path": path, "rgb": rgb])
+        let isBlack = { (p: [Int]) in p.allSatisfy { $0 < 30 } }
+        check("letterbox", isBlack(rgb[0]), "top not black: \(rgb[0])")
+        check("letterbox", isBlack(rgb[1]), "bottom not black: \(rgb[1])")
+        check("letterbox", !isBlack(rgb[2]), "picture is black: \(rgb[2])")
+      }
+    } catch {
+      failures.append("letterbox: \(error)")
     }
 
     engine.control.sync { engine.shutdown() }

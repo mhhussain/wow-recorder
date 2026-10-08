@@ -73,7 +73,7 @@ Settings (gear in the side menu):
 3. **In WoW:** System > Network > enable Advanced Combat Logging, and turn on combat logging (`/combatlog`, or an auto-logging addon). Warcraft Recorder only reacts to what WoW writes to `WoWCombatLog-*.txt`.
 4. **Video.**
    - Capture Mode: Window or Game (both capture the WoW window on macOS) or Monitor (a whole display).
-   - Canvas Resolution: match your display's aspect (your displays are 3440x1440; pick 3440x1440, or 2560x1080 for smaller files). Other aspects are letterboxed.
+   - Canvas Resolution: match the game's aspect ratio (your displays are 3440x1440; pick 3440x1440, or 2560x1080 for smaller files) and the picture fills the video. Any other aspect ratio shows the whole picture centered with black bars (top and bottom for 16:9).
    - FPS: 60 (or 30).
    - Video Encoder: Apple VideoToolbox H.264 (most compatible) or HEVC (smaller; required above 4K).
    - Quality: Moderate to start.
@@ -158,6 +158,8 @@ Pass: the overlay appears in the saved video where the sliders put it.
 | No game audio | Screen Recording covers system audio; reset and re-grant. If using an Application source, pick "World of Warcraft (any client)". |
 | No microphone | System Settings > Privacy & Security > Microphone; check the selected device in Audio settings. |
 | Recording never starts in a raid | Combat logging must be on; check that `WoWCombatLog-*.txt` grows in the Logs folder. Check "Record raids" and the minimum difficulty. |
+| Black bars above and below the picture | The canvas aspect ratio differs from the game's: pick 3440x1440 or 2560x1080 for a 21:9 window. |
+| No deaths on the timeline | "Show Deaths" (next to "Show Encounters" under the player) defaults to "Own"; choose "All" for party members' deaths. |
 | Chat overlay missing from videos | It must be enabled with a readable image; an error report "Chat overlay is off" names the problem. Positions are in canvas pixels, so a large X/Y can push it off screen. |
 | Helper self-test | `~/Applications/WarcraftRecorder.app/Contents/Resources/binaries/wcr-capture selftest /tmp/wcr-selftest` must print `"selftest":"pass"` (needs no permissions). |
 

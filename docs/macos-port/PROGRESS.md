@@ -6,8 +6,8 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 - **Current phase:** 6 (verification and handoff): MVP confirmed on device (Mythic+ recorded, 2026-10-05); polishing from on-device findings
 - **Last checkpoint tag:** `macos-port-phase-7-pvp` (local only; see blocker B-001 and the tag table below)
-- **Latest CI result:** run 37398293382 (commit dae07bd, D-012) green: typecheck, lint, 80 tests passed (17 skipped are the full-log fidelity tests whose large logs CI deliberately leaves out), helper self-test pass including the overlay pixel check (inside the overlay RGB 255,1,0; below and left 73,73,73), package, smoke test PASS, artifact uploaded.
-- **Exact next step:** owner installs the D-012 build (MANUAL_TEST.md section 1), checks the chat overlay (section 7b) and that closing WoW returns the status to "Waiting for WoW" without the helper retrying the WoW window, then continues normal use (raids, keys) and reports anything odd with the log command in section 9.
+- **Latest CI result:** pending for the D-013 commit (centered capture, native window buttons, death marker offset). Previous: run 37398293382 (dae07bd) green.
+- **Exact next step:** owner installs the D-013 build, sets Canvas Resolution to 3440x1440 or 2560x1080 (no bars) or keeps 16:9 (centered bars), sets "Show Deaths" to "All" in the viewer, and checks the traffic-light buttons. Cloud self-hosting guide: `docs/macos-port/CLOUD_SELF_HOSTING.md`.
 
 ## Phase checklist
 
@@ -50,6 +50,7 @@ Single source of truth for resuming. Update before every checkpoint commit.
 
 ### On-device findings (owner)
 - [x] 2026-10-05 Mythic+ (Murder Row +11): error "Buffer not started" at CHALLENGE_MODE_START, no video. The log pipeline worked (the fixture replays to a recording start); the recorder was not buffering. Root cause unknown: the first diagnosis (ps truncation, D-009) was refuted on the runner (D-010). Mitigations shipped: a fallback that starts the buffer at activity start instead of dropping the run, a report for unexpected buffer loss, and `[Poller] WoW processes` logging. Waiting on the owner's app log and re-test.
+- [x] 2026-10-08 owner feedback: black bar below the picture (21:9 window on a 16:9 canvas, top-aligned by ScreenCaptureKit; now centered, D-013), Windows-style window buttons (now native traffic lights), no deaths on the M+ timeline ("Show Deaths" defaults to "Own"; marker offset bug fixed), request for a cloud self-hosting guide.
 - [x] 2026-10-05 third run (D-011 build): Mythic+ recorded end to end (WoW detected, buffer up in 0.2 s, WoW window and microphone captured, recording converted 0.7 s after CHALLENGE_MODE_START, saved when WoW closed). Found: buffer restarted after WoW closed (fixed, D-012); `[Manager] Cannot process event protect` is the cloud handler ignoring the event with cloud off (harmless, upstream behaviour).
 - [x] 2026-10-05 second run (new build): "Failed to start" (the helper did not confirm `start` within 30 s). WoW detection confirmed fine from the owner's `ps` output (WoW on `/Volumes/Dock`). Likely a capture setup step stalling (permission prompt after the signature change, or ScreenCaptureKit); buffer start no longer waits on any of it (D-011). Not confirmed which step: no log available.
 

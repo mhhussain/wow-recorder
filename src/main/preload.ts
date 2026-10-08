@@ -8,7 +8,6 @@ import { AudioSourceType, RendererVideo, SceneItem } from './types';
 import { TChatMessageWithId } from 'types/api';
 
 export type Channels =
-  | 'window'
   | 'videoButtonDisk'
   | 'videoButtonCloud'
   | 'logPath'

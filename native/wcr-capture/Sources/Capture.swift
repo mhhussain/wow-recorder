@@ -122,6 +122,7 @@ final class SCKVideoSource: NSObject, VideoFrameSource, SCStreamOutput, SCStream
     guard running, activeStream == nil else { return }
     let content = try SCK.content()
     let filter: SCContentFilter
+    let source: CGSize
 
     switch config.video.kind {
     case "display":
@@ -133,6 +134,7 @@ final class SCKVideoSource: NSObject, VideoFrameSource, SCStreamOutput, SCStream
         throw HelperError.failed("No displays available to capture")
       }
       filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+      source = CGSize(width: display.width, height: display.height)
       logInfo("Capturing display \(display.displayID) (\(display.width)x\(display.height))")
 
     case "wow":
@@ -141,6 +143,7 @@ final class SCKVideoSource: NSObject, VideoFrameSource, SCStreamOutput, SCStream
         return
       }
       filter = SCContentFilter(desktopIndependentWindow: window)
+      source = window.frame.size
       windowID = window.windowID
       logInfo(
         "Capturing WoW window \(window.windowID) '\(window.title ?? "")' \(Int(window.frame.width))x\(Int(window.frame.height))"
@@ -150,9 +153,14 @@ final class SCKVideoSource: NSObject, VideoFrameSource, SCStreamOutput, SCStream
       return
     }
 
+    // Capture at the source's aspect ratio, as large as fits the canvas.
+    // ScreenCaptureKit's own letterboxing pins the picture to the top, so
+    // FrameCompositor centers it on the canvas instead.
+    let size = FrameCompositor.fit(source, width: config.width, height: config.height).size
+
     let sc = SCStreamConfiguration()
-    sc.width = config.width
-    sc.height = config.height
+    sc.width = Int(size.width)
+    sc.height = Int(size.height)
     sc.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(config.fps))
     sc.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
     sc.colorMatrix = kCVImageBufferYCbCrMatrix_ITU_R_709_2

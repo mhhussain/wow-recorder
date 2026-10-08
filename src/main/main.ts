@@ -67,6 +67,19 @@ console.info('[Main] In timezone:', tz, tzOffsetStr);
 
 let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
+
+/** Set once the app is quitting, so closing the window really closes it. */
+let quitting = false;
+
+/**
+ * Bring the main window back from hidden or minimized.
+ */
+const showWindow = () => {
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+};
 const manager = new Manager();
 
 /**
@@ -170,17 +183,14 @@ const setupTray = () => {
       label: getLocalePhrase(language, Phrase.SystemTrayOpen),
       click() {
         console.info('[Main] User clicked open on tray icon');
-        if (window) window.show();
+        showWindow();
       },
     },
     {
       label: getLocalePhrase(language, Phrase.SystemTrayQuit),
       click() {
         console.info('[Main] User clicked close on tray icon');
-
-        if (window) {
-          window.close();
-        }
+        app.quit();
       },
     },
   ]);
@@ -190,10 +200,7 @@ const setupTray = () => {
 
   tray.on('double-click', () => {
     console.info('[Main] User double clicked tray icon');
-
-    if (window) {
-      window.show();
-    }
+    showWindow();
   });
 };
 
@@ -210,7 +217,9 @@ const createWindow = async () => {
     height: 1020 * 0.9,
     width: 1980 * 0.8,
     icon: getAssetPath('./icon/small-icon.png'),
-    frame: false,
+    // Native macOS traffic lights over the app's own 32 px title bar.
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 12, y: 10 },
     title: `Warcraft Recorder v${appVersion}`,
     webPreferences: {
       sandbox: true, // Good security practice.
@@ -285,6 +294,25 @@ const createWindow = async () => {
 
   window.on('blur', () => {
     window?.webContents.send('window-focus-status', false);
+  });
+
+  // The red close button hides to the menu bar when "minimize on quit" is
+  // on; quitting (Cmd+Q, the tray's Quit) still closes it.
+  window.on('close', (event) => {
+    if (quitting || !cfg.get<boolean>('minimizeOnQuit')) return;
+    console.info('[Main] Hiding main window');
+    event.preventDefault();
+    window?.webContents.send('pausePlayer');
+    window?.hide();
+  });
+
+  // The yellow button minimizes to the Dock, or hides to the menu bar when
+  // "minimize to tray" is on.
+  window.on('minimize', () => {
+    if (!cfg.get<boolean>('minimizeToTray')) return;
+    console.info('[Main] Minimize main window to tray');
+    window?.webContents.send('pausePlayer');
+    window?.hide();
   });
 
   window.on('closed', () => {
@@ -365,46 +393,6 @@ const checkMediaAccess = async () => {
 /**
  * window event listeners.
  */
-ipcMain.on('window', (_event, args) => {
-  if (window === null) return;
-
-  if (args[0] === 'minimize') {
-    console.info('[Main] User clicked minimize');
-
-    if (cfg.get<boolean>('minimizeToTray')) {
-      console.info('[Main] Minimize main window to tray');
-      window.webContents.send('pausePlayer');
-      window.hide();
-    } else {
-      console.info('[Main] Minimize main window to taskbar');
-      window.minimize();
-    }
-  }
-
-  if (args[0] === 'resize') {
-    console.info('[Main] User clicked resize');
-
-    if (window.isMaximized()) {
-      window.unmaximize();
-    } else {
-      window.maximize();
-    }
-  }
-
-  if (args[0] === 'quit') {
-    console.info('[Main] User clicked quit button');
-
-    if (cfg.get<boolean>('minimizeOnQuit')) {
-      console.info('[Main] Hiding main window');
-      window.webContents.send('pausePlayer');
-      window.hide();
-    } else {
-      console.info('[Main] Closing main window');
-      window.close();
-    }
-  }
-});
-
 /**
  * Opens a system explorer window to select a path.
  */
@@ -585,6 +573,7 @@ app.on('window-all-closed', async () => {
  */
 app.on('before-quit', () => {
   console.info('[Main] Running before-quit actions');
+  quitting = true;
 
   if (tray) {
     console.info('[Main] Destroy tray icon');
@@ -614,11 +603,11 @@ app
 
     app.on('second-instance', () => {
       console.info('[Main] Second instance attempted, will restore app');
-      if (!window) return;
-      if (window.isMinimized()) window.restore();
-      window.show();
-      window.focus();
+      showWindow();
     });
+
+    // Clicking the Dock icon brings back a hidden window.
+    app.on('activate', () => showWindow());
 
     new MenuBuilder().buildMenu();
 

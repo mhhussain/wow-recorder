@@ -532,15 +532,11 @@ export default class RetailLogHandler extends LogHandler {
     if (id === 211319) {
       // This is the Holy priest "Restitution" debuff being applied, count
       // that as a death (https://www.wowhead.com/spell=211319).
-      const deathDate = (line.date().getTime() - 2) / 1000;
-      const activityStartDate = LogHandler.activity.startDate.getTime() / 1000;
-      const relativeTime = deathDate - activityStartDate;
-
       const playerDeath: PlayerDeathType = {
         name: srcNameRealm,
         specId: 257, // Must be a holy priest.
         date: line.date(),
-        timestamp: relativeTime,
+        timestamp: LogHandler.deathTimestamp(line.date()),
         friendly: isUnitFriendly(srcFlags),
       };
 
