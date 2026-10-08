@@ -1,5 +1,5 @@
 import path from 'path';
-import { fixPathWhenPackaged } from './util';
+import { app } from 'electron';
 import log from 'electron-log/main';
 import fs from 'fs';
 
@@ -84,10 +84,16 @@ export const setupApplicationLogging = () => {
   void removeExcessLogs();
 };
 
+/**
+ * ~/Library/Logs/WarcraftRecorder (~/Library/Logs/Electron in dev mode).
+ * Upstream logged next to the executable, which on macOS is inside the
+ * signed app bundle: not writable under /Applications, and modifying the
+ * bundle invalidates its signature seal.
+ */
 export const getApplicationLogDir = () => {
-  const parent = fixPathWhenPackaged(__dirname);
-  const dir = 'logs';
-  return path.join(parent, dir);
+  const dir = app.getPath('logs');
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 };
 
 const removeExcessLogs = async () => {

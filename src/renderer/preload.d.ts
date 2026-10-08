@@ -6,7 +6,11 @@ import {
   RendererVideo,
   SceneItem,
 } from 'main/types';
-import { ObsProperty, SceneItemPosition, SourceDimensions } from 'noobs';
+import {
+  ObsProperty,
+  SceneItemPosition,
+  SourceDimensions,
+} from 'main/mac/noobsTypes';
 import { TChatMessageWithId } from 'types/api';
 
 declare global {

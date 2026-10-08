@@ -6,7 +6,7 @@ import fs, {
   promises as fspromise,
   Stats,
 } from 'fs';
-import { app, Display, screen } from 'electron';
+import { app, Display, screen, shell } from 'electron';
 import {
   EventType,
   uIOhook,
@@ -35,8 +35,8 @@ import { send } from './main';
 import { Readable } from 'stream';
 import { ESupportedEncoders } from './obsEnums';
 import Recorder from './Recorder';
-import { exec, execFile } from 'child_process';
-import { specializationById, wowInstallSearchPaths } from './constants';
+import { execFile } from 'child_process';
+import { specializationById } from './constants';
 import {
   getPlayerName,
   getPlayerSpecID,
@@ -297,9 +297,12 @@ const writeMetadataFile = async (videoPath: string, metadata: Metadata) => {
  * Open a folder in system explorer.
  */
 const openSystemExplorer = (filePath: string) => {
-  const windowsPath = filePath.replace(/\//g, '\\');
-  const cmd = `explorer.exe /select,"${windowsPath}"`;
-  exec(cmd, () => {});
+  // Folders open in Finder; files are revealed in their folder.
+  if (existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+    shell.openPath(filePath);
+  } else {
+    shell.showItemInFolder(filePath);
+  }
 };
 
 /**
@@ -1156,8 +1159,18 @@ const runFirstTimeSetupActionsObs = () => {
   }
 };
 
+/**
+ * Default WoW install locations on macOS. The Battle.net installer uses
+ * /Applications; ~/Applications covers per-user installs.
+ */
+const getWowInstallSearchPaths = () => [
+  '/Applications/World of Warcraft',
+  path.join(app.getPath('home'), 'Applications', 'World of Warcraft'),
+];
+
 const runFirstTimeSetupActionsNoObs = () => {
   const cfg = ConfigService.getInstance();
+  const searchPaths = getWowInstallSearchPaths();
 
   const isRetailConfigured =
     cfg.get<boolean>('recordRetail') && cfg.get<string>('retailLogPath');
@@ -1165,16 +1178,14 @@ const runFirstTimeSetupActionsNoObs = () => {
   if (!isRetailConfigured) {
     console.info('[Util] Attempt to first time configure retail installation');
 
-    for (let i = 0; i < wowInstallSearchPaths.length; i++) {
-      const installPath = wowInstallSearchPaths[i] + '\\_retail_\\Logs';
-      const installExists = existsSync(installPath);
+    const installPath = searchPaths
+      .map((p) => path.join(p, '_retail_', 'Logs'))
+      .find((p) => existsSync(p));
 
-      if (installExists) {
-        console.info('[Util] Found retail WoW installation at', installPath);
-        cfg.set('retailLogPath', installPath);
-        cfg.set('recordRetail', true);
-        break;
-      }
+    if (installPath) {
+      console.info('[Util] Found retail WoW installation at', installPath);
+      cfg.set('retailLogPath', installPath);
+      cfg.set('recordRetail', true);
     }
   }
 
@@ -1184,26 +1195,23 @@ const runFirstTimeSetupActionsNoObs = () => {
   if (!isClassicConfigured) {
     console.info('[Util] Attempt to first time configure classic installation');
 
-    for (let i = 0; i < wowInstallSearchPaths.length; i++) {
-      const installPath = wowInstallSearchPaths[i] + '\\_classic_\\Logs';
-      const installExists = existsSync(installPath);
+    const installPath = searchPaths
+      .map((p) => path.join(p, '_classic_', 'Logs'))
+      .find((p) => existsSync(p));
 
-      if (installExists) {
-        console.info('[Util] Found classic WoW installation at', installPath);
-        cfg.set('classicLogPath', installPath);
-        cfg.set('recordClassic', true);
-        break;
-      }
+    if (installPath) {
+      console.info('[Util] Found classic WoW installation at', installPath);
+      cfg.set('classicLogPath', installPath);
+      cfg.set('recordClassic', true);
     }
   }
 
   if (!cfg.get<string>('storagePath')) {
     console.info('[Util] Setting up default storage path');
-    const baseVideoPath = app.getPath('userData');
 
     const initialStorageDir = path.join(
-      baseVideoPath,
-      'Warcraft Recorder Videos',
+      app.getPath('videos'),
+      'Warcraft Recorder',
     );
 
     fs.mkdirSync(initialStorageDir, { recursive: true });

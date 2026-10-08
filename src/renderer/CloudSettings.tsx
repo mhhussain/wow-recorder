@@ -98,14 +98,6 @@ const CloudSettings = (props: IProps) => {
       });
 
       ipc.reconfigureCloud();
-
-      if (!config.cloudStorage) {
-        // If the user has disabled cloud storage, also
-        // disable custom image overlays and reconfigure it.
-        setConfig((prev) => ({ ...prev, chatOverlayOwnImage: false }));
-        setConfigValues({ chatOverlayOwnImage: false });
-        ipc.reconfigureOverlay();
-      }
     }, 2000); // Want to be long enough that it doesn't trigger mid-typing.
   }, [
     config.cloudStorage,

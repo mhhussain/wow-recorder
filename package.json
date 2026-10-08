@@ -31,14 +31,16 @@
     "postinstall": "ts-node .erb/scripts/check-native-dep.js && electron-builder install-app-deps && npm run build:dll",
     "lint": "cross-env NODE_ENV=development eslint ./src",
     "lint:fix": "cross-env NODE_ENV=development eslint ./src --fix",
-    "package": "ts-node ./.erb/scripts/clean.js dist && npm run build && electron-builder build --publish never && npm run build:dll",
+    "package": "ts-node ./.erb/scripts/clean.js dist && npm run build:native && npm run build && electron-builder build --mac --arm64 --publish never && npm run build:dll",
     "rebuild": "electron-rebuild --parallel --types prod,dev,optional --module-dir release/app",
     "prestart": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.main.dev.ts",
     "start": "ts-node ./.erb/scripts/check-port-in-use.js && npm run prestart && npm run start:renderer",
     "start:main": "concurrently -k \"cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --watch --config ./.erb/configs/webpack.config.main.dev.ts\" \"electronmon .\"",
     "start:preload": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack --config ./.erb/configs/webpack.config.preload.dev.ts",
     "start:renderer": "cross-env NODE_ENV=development TS_NODE_TRANSPILE_ONLY=true webpack serve --config ./.erb/configs/webpack.config.renderer.dev.ts",
-    "test": "jest --coverage --silent"
+    "test": "jest --silent",
+    "typecheck": "tsc -p tsconfig.typecheck.json",
+    "build:native": "bash native/build.sh"
   },
   "devEngines": {
     "runtime": {
@@ -66,27 +68,14 @@
     "productName": "WarcraftRecorder",
     "appId": "org.WarcraftRecorder",
     "asar": true,
-    "asarUnpack": "**\\**",
+    "asarUnpack": [
+      "**/*.node"
+    ],
     "files": [
       "dist",
       "node_modules",
       "package.json"
     ],
-    "nsis": {
-      "oneClick": true,
-      "include": "installer.nsh",
-      "deleteAppDataOnUninstall": true
-    },
-    "win": {
-      "icon": "assets/icon.png",
-      "signtoolOptions": {
-        "certificateSubjectName": "Warcraft Recorder LTD"
-      },
-      "artifactName": "WarcraftRecorder-Setup-${version}.exe",
-      "target": [
-        "nsis"
-      ]
-    },
     "directories": {
       "app": "release/app",
       "buildResources": "assets",
@@ -96,16 +85,64 @@
       "./assets/**",
       "./binaries/*"
     ],
-    "publish": {
-      "provider": "github",
-      "owner": "aza547",
-      "repo": "wow-recorder"
-    }
+    "mac": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.video",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Warcraft Recorder records your microphone together with your gameplay.",
+        "NSAudioCaptureUsageDescription": "Warcraft Recorder records game and system audio together with your gameplay.",
+        "NSScreenCaptureUsageDescription": "Warcraft Recorder records the World of Warcraft window or your display.",
+        "LSMinimumSystemVersion": "27.0"
+      }
+    },
+    "afterPack": ".erb/scripts/adhoc-sign.js"
   },
   "jest": {
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/src"
+    ],
+    "moduleDirectories": [
+      "node_modules",
+      "src"
+    ],
+    "moduleNameMapper": {
+      "^electron$": "<rootDir>/tests/mocks/electron.ts",
+      "\\.(css|scss|sass)$": "identity-obj-proxy",
+      "^uiohook-napi$": "<rootDir>/tests/mocks/uiohook-napi.ts",
+      "^electron-store$": "<rootDir>/tests/mocks/electron-store.ts",
+      "^electron-log(/main)?$": "<rootDir>/tests/mocks/electron-log.ts",
+      "^(\\./main|main/main)$": "<rootDir>/tests/mocks/main.ts",
+      "^archiver$": "<rootDir>/tests/mocks/archiver.ts"
+    },
     "transform": {
-      "\\.(ts|tsx|js|jsx)$": "ts-jest"
-    }
+      "\\.(ts|tsx|js|jsx)$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "isolatedModules": true
+          }
+        }
+      ]
+    },
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/release/"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/tests/setup.ts"
+    ]
   },
   "dependencies": {
     "@electron/notarize": "^3.0.0",
@@ -154,7 +191,7 @@
     "history": "^5.3.0",
     "lodash": "^4.17.21",
     "lucide-react": "^0.428.0",
-    "node-abi": "^4.31.0",
+    "node-abi": "^4.36.0",
     "path": "^0.12.7",
     "re-resizable": "^6.9.11",
     "react": "^19.0.0",
@@ -169,7 +206,6 @@
     "semver": "^7.8.5",
     "tailwind-merge": "^2.5.2",
     "tailwindcss-animate": "^1.0.7",
-    "tsc": "^2.0.4",
     "tss-react": "^4.1.1",
     "uuid": "^11.0.3",
     "wait-queue": "^1.1.4",
@@ -215,6 +251,7 @@
     "eslint-plugin-prettier": "^5.2.1",
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "ffmpeg-static": "^5.3.0",
     "file-loader": "^6.2.0",
     "globals": "^15.14.0",
     "html-webpack-plugin": "^5.6.3",

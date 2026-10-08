@@ -2,6 +2,7 @@ export default class AsyncQueue {
   private queue: (() => Promise<void>)[] = [];
   private running = false;
   private limit: number; // Limit the queued tasks.
+  private idleWaiters: (() => void)[] = [];
 
   constructor(limit: number) {
     this.limit = limit;
@@ -30,5 +31,14 @@ export default class AsyncQueue {
     }
 
     this.running = false;
+    this.idleWaiters.splice(0).forEach((resolve) => resolve());
+  }
+
+  /**
+   * Resolves once every queued task has finished.
+   */
+  public drain(): Promise<void> {
+    if (!this.running && this.queue.length === 0) return Promise.resolve();
+    return new Promise((resolve) => this.idleWaiters.push(resolve));
   }
 }

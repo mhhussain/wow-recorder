@@ -203,6 +203,8 @@ enum Phrase {
   HorizontalLabel,
   VerticalLabel,
   ScaleLabel,
+  XPositionLabel,
+  YPositionLabel,
   TableHeaderEncounter,
   TableHeaderResult,
   TableHeaderPull,

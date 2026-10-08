@@ -239,23 +239,11 @@ export default abstract class LogHandler {
     const playerSpecId =
       LogHandler.activity.getCombatant(playerGUID)?.specID ?? 0;
 
-    // Add player death and subtract 2 seconds from the time of death to allow the
-    // user to view a bit of the video before the death and not at the actual millisecond
-    // it happens.
-    const deathDate = (line.date().getTime() - 2) / 1000;
-    const activityStartDate = LogHandler.activity.startDate.getTime() / 1000;
-    let relativeTime = deathDate - activityStartDate;
-
-    if (relativeTime < 0) {
-      console.error('[LogHandler] Tried to set timestamp to', relativeTime);
-      relativeTime = 0;
-    }
-
     const playerDeath: PlayerDeathType = {
       name: playerName,
       specId: playerSpecId,
       date: line.date(),
-      timestamp: relativeTime,
+      timestamp: LogHandler.deathTimestamp(line.date()),
       friendly: isUnitFriendly(unitFlags),
     };
 
@@ -455,6 +443,15 @@ export default abstract class LogHandler {
   public static dropActivity() {
     LogHandler.overrunning = false;
     LogHandler.activity = undefined;
+  }
+
+  /**
+   * Seconds into the activity for a death marker, 2 s before the death so
+   * the video shows a moment of what led to it. Never before the start.
+   */
+  protected static deathTimestamp(date: Date) {
+    const start = LogHandler.activity?.startDate.getTime() ?? date.getTime();
+    return Math.max(0, (date.getTime() - 2000 - start) / 1000);
   }
 
   protected async zoneChangeStop(line: LogLine) {

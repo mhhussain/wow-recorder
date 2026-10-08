@@ -129,7 +129,7 @@ const VideoBaseControls: FC<IProps> = (props: IProps) => {
         return {
           ...prevState,
           obsOutputResolution: value,
-          obsRecEncoder: ESupportedEncoders.OBS_X264,
+          obsRecEncoder: ESupportedEncoders.VT_HEVC,
         };
       });
     } else {
@@ -335,7 +335,8 @@ const VideoBaseControls: FC<IProps> = (props: IProps) => {
 
     if (
       values.includes(ESupportedEncoders.AMD_H265) ||
-      values.includes(ESupportedEncoders.NVENC_H265)
+      values.includes(ESupportedEncoders.NVENC_H265) ||
+      values.includes(ESupportedEncoders.VT_HEVC)
     ) {
       // Include H265 description if it's available.
       tooltip += '\n\n';

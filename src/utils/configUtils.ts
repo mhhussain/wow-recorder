@@ -339,6 +339,22 @@ const validateLogPathFilesystem = async (
   }
 };
 
+/**
+ * The log folder's sibling .flavor.info names the WoW flavour. Whether the
+ * macOS client writes it is unverified, so a missing file (reported as
+ * 'unknown') is accepted with a warning; a wrong flavour is still rejected.
+ */
+const isAcceptableFlavour = (valid: string[], logPath: string) => {
+  const flavour = getWowFlavour(logPath);
+
+  if (flavour === 'unknown') {
+    console.warn('[Util] No .flavor.info next to', logPath, 'assuming valid');
+    return true;
+  }
+
+  return valid.includes(flavour);
+};
+
 const validateBaseConfig = async (config: BaseConfig) => {
   const {
     storagePath,
@@ -426,7 +442,7 @@ const validateBaseConfig = async (config: BaseConfig) => {
     const validRetailFlavours = ['wow'];
 
     const validFlavor = validateLogPaths
-      ? validRetailFlavours.includes(getWowFlavour(retailLogPath))
+      ? isAcceptableFlavour(validRetailFlavours, retailLogPath)
       : true;
 
     const validPath = path.basename(retailLogPath) === 'Logs';
@@ -445,7 +461,7 @@ const validateBaseConfig = async (config: BaseConfig) => {
     const validRetailPtrFlavours = ['wowxptr', 'wow_beta', 'wowt'];
 
     const validFlavor = validateLogPaths
-      ? validRetailPtrFlavours.includes(getWowFlavour(retailPtrLogPath))
+      ? isAcceptableFlavour(validRetailPtrFlavours, retailPtrLogPath)
       : true;
 
     const validPath = path.basename(retailPtrLogPath) === 'Logs';
@@ -467,7 +483,7 @@ const validateBaseConfig = async (config: BaseConfig) => {
     const validClassicFlavours = ['wow_classic', 'wow_anniversary'];
 
     const validFlavour = validateLogPaths
-      ? validClassicFlavours.includes(getWowFlavour(classicLogPath))
+      ? isAcceptableFlavour(validClassicFlavours, classicLogPath)
       : true;
 
     const validPath = path.basename(classicLogPath) === 'Logs';
@@ -485,7 +501,7 @@ const validateBaseConfig = async (config: BaseConfig) => {
   if (recordClassicPtr) {
     const validClassicPtrFlavours = ['wow_classic_beta', 'wow_classic_ptr'];
     const validFlavor = validateLogPaths
-      ? validClassicPtrFlavours.includes(getWowFlavour(classicPtrLogPath))
+      ? isAcceptableFlavour(validClassicPtrFlavours, classicPtrLogPath)
       : true;
 
     const validPath = path.basename(classicPtrLogPath) === 'Logs';
@@ -507,7 +523,7 @@ const validateBaseConfig = async (config: BaseConfig) => {
     const validEraFlavours = ['wow_classic_era', 'wow_classic_era_ptr'];
 
     const validFlavour = validateLogPaths
-      ? validEraFlavours.includes(getWowFlavour(eraLogPath))
+      ? isAcceptableFlavour(validEraFlavours, eraLogPath)
       : true;
 
     const validPath = path.basename(eraLogPath) === 'Logs';

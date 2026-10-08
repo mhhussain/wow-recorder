@@ -9,9 +9,10 @@ import {
   Menu,
   clipboard,
   protocol,
+  nativeImage,
+  systemPreferences,
 } from 'electron';
 import os from 'os';
-import { uIOhook } from 'uiohook-napi';
 import assert from 'assert';
 import { getLocalePhrase, Language } from 'localisation/translations';
 import {
@@ -23,11 +24,17 @@ import {
   runFirstTimeSetupActionsObs,
   runFirstTimeSetupActionsNoObs,
   createDiagsBundle,
+  emitErrorReport,
 } from './util';
-import { OurDisplayType, SoundAlerts, VideoPlayerSettings } from './types';
+import {
+  AudioSource,
+  AudioSourceType,
+  OurDisplayType,
+  SoundAlerts,
+  VideoPlayerSettings,
+} from './types';
 import ConfigService from '../config/ConfigService';
 import Manager from './Manager';
-import AppUpdater from './AppUpdater';
 import MenuBuilder from './menu';
 import { Phrase } from 'localisation/phrases';
 import CloudClient from 'storage/CloudClient';
@@ -36,7 +43,16 @@ import Poller from 'utils/Poller';
 import Recorder from './Recorder';
 import AsyncQueue from 'utils/AsyncQueue';
 import { getApplicationLogDir, setupApplicationLogging } from './logging';
+import { ensureInputHook, stopInputHook } from './inputHook';
+import {
+  finishSmokeTest,
+  isSmokeTest,
+  prepareSmokeTest,
+  watchSmokeTestWindow,
+} from './smokeTest';
 
+// Before anything reads app paths (CI boot check only, see smokeTest.ts).
+prepareSmokeTest();
 setupApplicationLogging();
 const appVersion = app.getVersion();
 const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -51,6 +67,19 @@ console.info('[Main] In timezone:', tz, tzOffsetStr);
 
 let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
+
+/** Set once the app is quitting, so closing the window really closes it. */
+let quitting = false;
+
+/**
+ * Bring the main window back from hidden or minimized.
+ */
+const showWindow = () => {
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+};
 const manager = new Manager();
 
 /**
@@ -65,7 +94,7 @@ const cfg = ConfigService.getInstance();
 // shown yet so they can't have opened the settings.
 const firstTimeSetup = cfg.get<boolean>('firstTimeSetup');
 
-if (firstTimeSetup) {
+if (firstTimeSetup && !isSmokeTest()) {
   // Things we want to do before we initialize OBS.
   console.info('[Main] Run first time setup actions');
   runFirstTimeSetupActionsNoObs();
@@ -139,7 +168,12 @@ const installExtensions = async () => {
  * Setup tray icon, menu and event listeners.
  */
 const setupTray = () => {
-  tray = new Tray(getAssetPath('./icon/small-icon.png'));
+  // Menu bar icons are ~18pt tall on macOS.
+  const icon = nativeImage
+    .createFromPath(getAssetPath('./icon/small-icon.png'))
+    .resize({ width: 18, height: 18 });
+
+  tray = new Tray(icon);
 
   // This wont update without an app restart but whatever.
   const language = cfg.get<string>('language') as Language;
@@ -149,17 +183,14 @@ const setupTray = () => {
       label: getLocalePhrase(language, Phrase.SystemTrayOpen),
       click() {
         console.info('[Main] User clicked open on tray icon');
-        if (window) window.show();
+        showWindow();
       },
     },
     {
       label: getLocalePhrase(language, Phrase.SystemTrayQuit),
       click() {
         console.info('[Main] User clicked close on tray icon');
-
-        if (window) {
-          window.close();
-        }
+        app.quit();
       },
     },
   ]);
@@ -169,10 +200,7 @@ const setupTray = () => {
 
   tray.on('double-click', () => {
     console.info('[Main] User double clicked tray icon');
-
-    if (window) {
-      window.show();
-    }
+    showWindow();
   });
 };
 
@@ -189,7 +217,9 @@ const createWindow = async () => {
     height: 1020 * 0.9,
     width: 1980 * 0.8,
     icon: getAssetPath('./icon/small-icon.png'),
-    frame: false,
+    // Native macOS traffic lights over the app's own 32 px title bar.
+    titleBarStyle: 'hidden',
+    trafficLightPosition: { x: 12, y: 10 },
     title: `Warcraft Recorder v${appVersion}`,
     webPreferences: {
       sandbox: true, // Good security practice.
@@ -202,11 +232,15 @@ const createWindow = async () => {
   // Prevent Windows from opening the native window menu on draggable regions.
   window.on('system-context-menu', (event) => event.preventDefault());
 
+  if (isSmokeTest()) {
+    watchSmokeTestWindow(window);
+  }
+
   // We need to do this AFTER creating the window as it's used by the preview.
   Recorder.getInstance().initializeObs();
   await manager.startup();
 
-  if (firstTimeSetup) {
+  if (firstTimeSetup && !isSmokeTest()) {
     console.info('[Main] Run first time setup actions');
     runFirstTimeSetupActionsObs();
     cfg.set('firstTimeSetup', false);
@@ -235,7 +269,7 @@ const createWindow = async () => {
     );
 
     const startMinimized = cfg.get<boolean>('startMinimized');
-    if (!startMinimized) window.show();
+    if (!startMinimized && !isSmokeTest()) window.show();
 
     // Important to refresh status and videos after a user triggered
     // refresh, otherwise the frontend will be in its default state
@@ -262,11 +296,46 @@ const createWindow = async () => {
     window?.webContents.send('window-focus-status', false);
   });
 
+  // The red close button hides to the menu bar when "minimize on quit" is
+  // on; quitting (Cmd+Q, the tray's Quit) still closes it.
+  window.on('close', (event) => {
+    if (quitting || !cfg.get<boolean>('minimizeOnQuit')) return;
+    console.info('[Main] Hiding main window');
+    event.preventDefault();
+    window?.webContents.send('pausePlayer');
+    window?.hide();
+  });
+
+  // The yellow button minimizes to the Dock, or hides to the menu bar when
+  // "minimize to tray" is on.
+  window.on('minimize', () => {
+    if (!cfg.get<boolean>('minimizeToTray')) return;
+    console.info('[Main] Minimize main window to tray');
+    window?.webContents.send('pausePlayer');
+    window?.hide();
+  });
+
   window.on('closed', () => {
     window = null;
   });
 
   await window.loadURL(resolveHtmlPath('index.html'));
+
+  if (isSmokeTest()) {
+    // No tray, input hook or permission requests in the CI boot check.
+    finishSmokeTest(window, async () => {
+      const recorder = Recorder.getInstance();
+
+      return {
+        obsInitialized: recorder.obsInitialized,
+        backendRunning: recorder.isBackendRunning(),
+        encoders: recorder.getAvailableEncoders(),
+      };
+    });
+
+    return;
+  }
+
   setupTray();
 
   // Open urls in the user's browser
@@ -275,56 +344,55 @@ const createWindow = async () => {
     return { action: 'deny' };
   });
 
-  uIOhook.start();
+  // The global input hook needs the Accessibility permission on macOS, so
+  // only start it when a feature that uses it is enabled.
+  if (cfg.get<boolean>('pushToTalk') || cfg.get<boolean>('manualRecord')) {
+    ensureInputHook(emitErrorReport);
+  }
 
-  // Runs the auto-updater, which checks GitHub for new releases
-  // and will prompt the user if any are available.
-  new AppUpdater(window);
+  // No auto-update in this fork: upstream's updater would check upstream's
+  // Windows releases.
+
+  // Give the renderer a moment to subscribe to error reports.
+  setTimeout(() => checkMediaAccess(), 3000);
+};
+
+/**
+ * Ask for microphone access up front (the prompt is attributed to this app)
+ * and tell the user if Screen Recording, which ScreenCaptureKit needs for
+ * both video and system audio, has not been granted yet. The capture helper
+ * raises the Screen Recording prompt itself the first time it starts.
+ */
+const checkMediaAccess = async () => {
+  const mic = systemPreferences.getMediaAccessStatus('microphone');
+  const screen = systemPreferences.getMediaAccessStatus('screen');
+  console.info('[Main] Media access status', { mic, screen });
+
+  const wantsMic = cfg
+    .get<AudioSource[]>('audioSources')
+    .some((src) => src.type === AudioSourceType.INPUT);
+
+  if (wantsMic && mic === 'not-determined') {
+    const granted = await systemPreferences.askForMediaAccess('microphone');
+    console.info('[Main] Microphone access granted:', granted);
+  } else if (wantsMic && mic !== 'granted') {
+    emitErrorReport(
+      'Microphone access is not allowed for Warcraft Recorder. Enable it in System Settings > Privacy & Security > Microphone.',
+    );
+  }
+
+  if (screen !== 'granted') {
+    Recorder.getInstance().requestScreenAccess();
+
+    emitErrorReport(
+      'Warcraft Recorder needs Screen & System Audio Recording permission to record video and game audio. Enable it in System Settings > Privacy & Security > Screen & System Audio Recording, then restart Warcraft Recorder.',
+    );
+  }
 };
 
 /**
  * window event listeners.
  */
-ipcMain.on('window', (_event, args) => {
-  if (window === null) return;
-
-  if (args[0] === 'minimize') {
-    console.info('[Main] User clicked minimize');
-
-    if (cfg.get<boolean>('minimizeToTray')) {
-      console.info('[Main] Minimize main window to tray');
-      window.webContents.send('pausePlayer');
-      window.hide();
-    } else {
-      console.info('[Main] Minimize main window to taskbar');
-      window.minimize();
-    }
-  }
-
-  if (args[0] === 'resize') {
-    console.info('[Main] User clicked resize');
-
-    if (window.isMaximized()) {
-      window.unmaximize();
-    } else {
-      window.maximize();
-    }
-  }
-
-  if (args[0] === 'quit') {
-    console.info('[Main] User clicked quit button');
-
-    if (cfg.get<boolean>('minimizeOnQuit')) {
-      console.info('[Main] Hiding main window');
-      window.webContents.send('pausePlayer');
-      window.hide();
-    } else {
-      console.info('[Main] Closing main window');
-      window.close();
-    }
-  }
-});
-
 /**
  * Opens a system explorer window to select a path.
  */
@@ -505,6 +573,7 @@ app.on('window-all-closed', async () => {
  */
 app.on('before-quit', () => {
   console.info('[Main] Running before-quit actions');
+  quitting = true;
 
   if (tray) {
     console.info('[Main] Destroy tray icon');
@@ -513,7 +582,7 @@ app.on('before-quit', () => {
   }
 
   Poller.getInstance().stop();
-  uIOhook.stop();
+  stopInputHook();
   Recorder.getInstance().shutdownOBS();
 });
 
@@ -534,11 +603,11 @@ app
 
     app.on('second-instance', () => {
       console.info('[Main] Second instance attempted, will restore app');
-      if (!window) return;
-      if (window.isMinimized()) window.restore();
-      window.show();
-      window.focus();
+      showWindow();
     });
+
+    // Clicking the Dock icon brings back a hidden window.
+    app.on('activate', () => showWindow());
 
     new MenuBuilder().buildMenu();
 

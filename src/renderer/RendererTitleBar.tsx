@@ -1,41 +1,10 @@
-import { ComponentProps } from 'react';
-import { cn } from './components/utils';
 import icon from '../../assets/icon.png';
 
-const ipc = window.electron.ipcRenderer;
-
+/**
+ * The draggable title bar. The window buttons are the native macOS traffic
+ * lights, drawn by the system over the left of this bar.
+ */
 export default function RendererTitleBar() {
-  const clickedHide = () => {
-    ipc.sendMessage('window', ['minimize']);
-  };
-
-  const clickedResize = () => {
-    ipc.sendMessage('window', ['resize']);
-  };
-
-  const clickedQuit = () => {
-    ipc.sendMessage('window', ['quit']);
-  };
-
-  const TitleBarButton = ({
-    children,
-    className,
-    ...props
-  }: ComponentProps<'button'>) => {
-    return (
-      <button
-        type="button"
-        className={cn(
-          'w-8 h-8 bg-transparent border-0 text-white text-base outline-none hover:bg-foreground',
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </button>
-    );
-  };
-
   return (
     <div
       id="title-bar"
@@ -47,21 +16,6 @@ export default function RendererTitleBar() {
       />
       <div className="text-popover-foreground font-semibold text-sm font-sans">
         Warcraft Recorder
-      </div>
-      <div id="title-bar-btns" className="ml-auto absolute right-0 top-0">
-        <TitleBarButton id="min-btn" onClick={clickedHide}>
-          🗕
-        </TitleBarButton>
-        <TitleBarButton id="max-btn" onClick={clickedResize}>
-          🗗
-        </TitleBarButton>
-        <TitleBarButton
-          id="close-btn"
-          className="hover:bg-destructive"
-          onClick={clickedQuit}
-        >
-          ✖
-        </TitleBarButton>
       </div>
     </div>
   );

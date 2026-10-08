@@ -16,6 +16,7 @@ import {
   resetActivityStatus,
   getMostRecentCombatLogModifiedTime,
   startWatchingConfigWtf,
+  emitErrorReport,
 } from './util';
 import { VideoCategory } from '../types/VideoCategory';
 import Poller from '../utils/Poller';
@@ -52,6 +53,7 @@ import LogHandler from 'parsing/LogHandler';
 import { PTTKeyPressEvent } from 'types/KeyTypesUIOHook';
 import { send } from './main';
 import DiskClient from 'storage/DiskClient';
+import { ensureInputHook } from './inputHook';
 
 /**
  * Manager class.
@@ -724,6 +726,10 @@ export default class Manager {
     // Config change listener we use to tweak the app settings in Windows if
     // the user enables/disables run on start-up.
     this.cfg.on('change', (key: string, value: unknown) => {
+      if ((key === 'pushToTalk' || key === 'manualRecord') && value === true) {
+        ensureInputHook(emitErrorReport);
+      }
+
       if (key === 'startUp') {
         const isStartUp = value === true;
         console.info('[Main] OS level set start-up behaviour:', isStartUp);
@@ -868,6 +874,8 @@ export default class Manager {
      * specific to Push to Talk, it's just like that for historical reasons.
      */
     ipcMain.handle('getNextKeyPress', async (): Promise<PTTKeyPressEvent> => {
+      // Binding a hotkey needs the global input hook.
+      ensureInputHook(emitErrorReport);
       this.manualHotKeyDisabled = true;
 
       const event = await Promise.race([

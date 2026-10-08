@@ -17,7 +17,6 @@ import {
 } from './obsEnums';
 import {
   deferredPromiseHelper,
-  fixPathWhenPackaged,
   getAssetPath,
   isPushToTalkHotkey,
   convertUioHookEvent,
@@ -47,20 +46,21 @@ import {
   getObsVideoConfig,
   getOverlayConfig,
 } from '../utils/configUtils';
-import noobs, {
+import noobs from './mac/noobs';
+import {
   ObsData,
   SceneItemPosition,
   Signal,
   SourceDimensions,
-} from 'noobs';
+} from './mac/noobsTypes';
 import { getNativeWindowHandle, send } from './main';
 import { ipcMain } from 'electron';
 import Poller from 'utils/Poller';
 import AsyncQueue from 'utils/AsyncQueue';
 import assert from 'assert';
 import { isHighRes } from 'renderer/rendererutils';
+import { ensureInputHook } from './inputHook';
 
-const devMode = process.env.NODE_ENV === 'development';
 const moov = Buffer.from('moov');
 const moof = Buffer.from('moof');
 const mdat = Buffer.from('mdat');
@@ -97,29 +97,6 @@ export default class Recorder extends EventEmitter {
   private cfg = ConfigService.getInstance();
 
   /**
-   * Timer for latching onto a window for either game capture or
-   * window capture. Often this does not appear immediately on
-   * the WoW process starting.
-   */
-  private findWindowTimer?: NodeJS.Timeout;
-
-  /**
-   * We wait 5s between each attempt to latch on to game or window
-   * capture sources.
-   */
-  private findWindowIntervalDuration = 5000;
-
-  /**
-   * The current number of attempts to find a window to capture.
-   */
-  private findWindowAttempts = 0;
-
-  /**
-   * The maximum number of attempts to find a window to capture.
-   */
-  private findWindowAttemptLimit = 10;
-
-  /**
    * Resolution selected by the user in settings.
    */
   private resolution: keyof typeof obsResolutions = this.cfg.get<string>(
@@ -148,6 +125,13 @@ export default class Recorder extends EventEmitter {
    * deactivate signals here which indicate the OBS output has deactivated.
    */
   private stopQueue = new WaitQueue<Signal>();
+
+  /**
+   * Rejects the in-flight startBuffer when the backend reports a failed
+   * start (for example a missing Screen Recording permission), so the
+   * error surfaces immediately instead of after the 30s timeout.
+   */
+  private failPendingStart?: (error: Error) => void;
 
   /**
    * The state of the recorder, typically used to tell if OBS is recording
@@ -303,9 +287,10 @@ export default class Recorder extends EventEmitter {
      * Callback to attach the audio devices. This is called when the user
      * opens the audio settings so that the volmeter bars can be populated.
      */
-    ipcMain.handle('audioSettingsOpen', () => {
+    ipcMain.handle('audioSettingsOpen', async () => {
       console.info('[Manager] Audio settings were opened');
       noobs.SetVolmeterEnabled(true);
+      await noobs.RefreshDevices();
 
       if (Poller.getInstance().isWowRunning()) {
         console.info('[Manager] Wont touch audio sources as WoW is running');
@@ -661,6 +646,12 @@ export default class Recorder extends EventEmitter {
     const settings: ObsData = { keyint_sec: 1 };
 
     switch (encoder) {
+      case ESupportedEncoders.VT_H264:
+      case ESupportedEncoders.VT_HEVC:
+        // VideoToolbox constant quality, 0..1. See getVtQualityFromPreset.
+        settings.quality = Recorder.getVtQualityFromPreset(quality);
+        break;
+
       case ESupportedEncoders.OBS_X264:
         // CRF and CPQ are so similar in configuration that we can just treat
         // the CRF configuration the same as CQP configuration.
@@ -906,6 +897,7 @@ export default class Recorder extends EventEmitter {
     }
 
     if (config.pushToTalk) {
+      ensureInputHook(emitErrorReport);
       this.inputDevicesMuted = true;
 
       this.pushToTalkKeyListener = (e: UiohookKeyboardEvent) =>
@@ -942,16 +934,10 @@ export default class Recorder extends EventEmitter {
   }
 
   /**
-   * Cancel the find window interval timer.
+   * Retained for Manager's call sites. On macOS the capture helper finds and
+   * follows the WoW window itself, so there is no polling timer to cancel.
    */
-  public clearFindWindowInterval() {
-    this.findWindowAttempts = 0;
-
-    if (this.findWindowTimer) {
-      clearInterval(this.findWindowTimer);
-      this.findWindowTimer = undefined;
-    }
-  }
+  public clearFindWindowInterval() {}
 
   /**
    * Release all OBS resources and shut it down.
@@ -968,6 +954,20 @@ export default class Recorder extends EventEmitter {
     noobs.Shutdown();
     this.obsInitialized = false;
     console.info('[Recorder] OBS shut down successfully');
+  }
+
+  /**
+   * Whether the capture helper process is up.
+   */
+  public isBackendRunning() {
+    return noobs.IsHelperRunning();
+  }
+
+  /**
+   * Trigger the macOS Screen Recording permission prompt.
+   */
+  public requestScreenAccess() {
+    noobs.RequestScreenAccess();
   }
 
   /**
@@ -1058,12 +1058,25 @@ export default class Recorder extends EventEmitter {
     }
 
     this.startQueue.empty();
+
+    const failed = new Promise<never>((_resolve, reject) => {
+      this.failPendingStart = reject;
+    });
+
     noobs.StartBuffer();
 
-    await Promise.race([
-      this.startQueue.shift(),
-      getPromiseBomb(30, 'Failed to start'),
-    ]);
+    try {
+      await Promise.race([
+        this.startQueue.shift(),
+        failed,
+        getPromiseBomb(
+          30,
+          'Failed to start: the capture helper did not confirm within 30 s. The [wcr-capture] lines in the app log show which step was slow.',
+        ),
+      ]);
+    } finally {
+      this.failPendingStart = undefined;
+    }
 
     this.startQueue.empty();
   }
@@ -1080,8 +1093,22 @@ export default class Recorder extends EventEmitter {
     }
 
     if (this.obsState !== ERecordingState.Recording) {
-      console.error('[Recorder] Buffer not started');
-      throw new Error('Buffer not started');
+      // Upstream drops the activity here. The combat log is being written,
+      // so WoW is running: the buffer is down because WoW was not detected
+      // or the capture helper restarted. Start it now and record from here
+      // rather than lose the whole activity.
+      console.warn('[Recorder] Buffer not running, starting it now');
+
+      emitErrorReport(
+        'The recorder was not running when this activity started, so the start of the video is missing. If the status did not show "Ready to record" while WoW was open, share the app log.',
+      );
+
+      if (this.audioSources.length === 0) {
+        // WoW was never detected, so its audio sources were never attached.
+        this.configureAudioSources(getObsAudioConfig(this.cfg));
+      }
+
+      await this.startObsBuffer();
     }
 
     // The native code expects an integer.
@@ -1196,20 +1223,10 @@ export default class Recorder extends EventEmitter {
     console.info('[Recorder] Initializing OBS');
     const cb = this.handleSignal.bind(this);
 
-    let logPath = devMode
-      ? path.resolve(__dirname, './logs')
-      : path.resolve(__dirname, '../../dist/main/logs');
-
-    let noobsPath = devMode
-      ? path.resolve(__dirname, '../../release/app/node_modules/noobs/dist')
-      : path.resolve(__dirname, '../../node_modules/noobs/dist');
-
-    logPath = fixPathWhenPackaged(logPath);
-    noobsPath = fixPathWhenPackaged(noobsPath);
-
-    console.info('[Recorder] Noobs path:', noobsPath);
-    console.info('[Recorder] Log path:', logPath);
-    noobs.Init(noobsPath, logPath, cb);
+    // The macOS backend needs no plugin or log paths: the capture helper
+    // logs to stderr, which lands in the application log.
+    noobs.onHelperError = (message: string) => emitErrorReport(message);
+    noobs.Init('', '', cb);
     noobs.SetBuffering(true);
     noobs.SetFragmentation(true);
 
@@ -1261,6 +1278,18 @@ export default class Recorder extends EventEmitter {
         break;
 
       case EOBSOutputSignal.Deactivate:
+        if (signal.code !== 0 && this.failPendingStart) {
+          this.failPendingStart(
+            new Error(signal.error || 'Recorder failed to start'),
+          );
+        } else if (signal.code !== 0) {
+          // Nobody is waiting on this (the helper died, or its automatic
+          // restart failed), so say so rather than drop the buffer silently.
+          emitErrorReport(
+            `Recording stopped unexpectedly: ${signal.error || signal.code}`,
+          );
+        }
+
         this.stopQueue.push(signal);
         this.obsState = ERecordingState.None;
         this.currentFile = null;
@@ -1546,6 +1575,26 @@ export default class Recorder extends EventEmitter {
   }
 
   /**
+   * Map the quality preset to VideoToolbox constant quality (0..1). Chosen to
+   * land near the upstream CQP 22/26/30/34 presets; tune on device.
+   */
+  private static getVtQualityFromPreset(quality: string) {
+    switch (quality) {
+      case QualityPresets.ULTRA:
+        return 0.8;
+      case QualityPresets.HIGH:
+        return 0.7;
+      case QualityPresets.MODERATE:
+        return 0.6;
+      case QualityPresets.LOW:
+        return 0.5;
+      default:
+        console.error('[Recorder] Unrecognised quality', quality);
+        throw new Error('Unrecognised quality');
+    }
+  }
+
+  /**
    * Convert the quality setting to an appropriate CQP/CRF value based on encoder type.
    */
   private static getCqpFromQuality(encoder: string, quality: string) {
@@ -1586,79 +1635,13 @@ export default class Recorder extends EventEmitter {
   }
 
   /**
-   * Check if the name of the window matches one of the known WoW window names.
-   */
-  private static windowMatch(item: { name: string; value: string | number }) {
-    return (
-      item.name.startsWith('[Wow.exe]: ') ||
-      item.name.startsWith('[WowT.exe]: ') ||
-      item.name.startsWith('[WowB.exe]: ') ||
-      item.name.startsWith('[WowClassic.exe]: ') ||
-      item.name.startsWith('[WowClassicT.exe]: ')
-    );
-  }
-
-  /**
-   * Attach the current game_capture or window_capture source to the WoW client.
+   * On Windows this polled the OBS window list until the WoW window appeared
+   * and attached the capture source to it. On macOS the capture helper finds
+   * the WoW window itself (and re-finds it if WoW recreates its window), so
+   * there is nothing to attach here.
    */
   public attachCaptureSource() {
-    console.info('[Recorder] Attaching capture source', this.captureSource);
-
-    if (
-      this.captureMode !== CaptureMode.WINDOW &&
-      this.captureMode !== CaptureMode.GAME
-    ) {
-      console.info('[Recorder] Nothing to attach for', this.captureMode);
-      return;
-    }
-
-    if (!this.captureSource) {
-      // This should never happen.
-      console.error('[Recorder] No capture source available');
-      return;
-    }
-
-    const properties = noobs.GetSourceProperties(this.captureSource);
-    const windows = properties.find((item) => item.name === 'window');
-
-    if (!windows) {
-      console.error('[Recorder] Failed to find window setting');
-      throw new Error('Failed to find window setting');
-    }
-
-    if (windows.type !== 'list') {
-      console.error('[Recorder] Window setting is not a list');
-      throw new Error('Window setting is not a list');
-    }
-
-    const opts = windows.items;
-    const match = opts.find(Recorder.windowMatch);
-
-    if (match) {
-      console.info('[Recorder] Found matching window for game capture:', match);
-      const settings = noobs.GetSourceSettings(this.captureSource);
-      const updated = { ...settings, window: match.value };
-      noobs.SetSourceSettings(this.captureSource, updated);
-      return;
-    }
-
-    if (this.findWindowAttempts < this.findWindowAttemptLimit) {
-      console.info('[Recorder] No matching window yet');
-      this.findWindowAttempts++;
-
-      this.findWindowTimer = setTimeout(
-        () => this.attachCaptureSource(),
-        this.findWindowIntervalDuration,
-      );
-
-      return;
-    }
-
-    console.warn(
-      '[Recorder] Failed to find WoW window after',
-      this.findWindowAttempts,
-      'attempts. Giving up.',
-    );
+    console.info('[Recorder] WoW window tracking is handled by the helper');
   }
 
   /**
@@ -1683,7 +1666,8 @@ export default class Recorder extends EventEmitter {
     const previewInfo = this.getDisplayInfo(); // Could be cached
     const sfx = previewInfo.previewWidth / previewInfo.canvasWidth;
     const sfy = previewInfo.previewHeight / previewInfo.canvasHeight;
-    const sf = Math.min(sfx, sfy);
+    // No preview on macOS (width 0): work in canvas pixels.
+    const sf = Math.min(sfx, sfy) || 1;
 
     const src =
       item === SceneItem.OVERLAY ? this.overlaySource : this.captureSource;
@@ -1741,7 +1725,8 @@ export default class Recorder extends EventEmitter {
     //      based on the aspect ratio.
     const sfx = previewInfo.previewWidth / previewInfo.canvasWidth;
     const sfy = previewInfo.previewHeight / previewInfo.canvasHeight;
-    const sf = Math.min(sfx, sfy);
+    // No preview on macOS (width 0): work in canvas pixels.
+    const sf = Math.min(sfx, sfy) || 1;
 
     // We only allow one scale factor to retail the aspect ratio of
     // the source so just use the X.
@@ -1876,34 +1861,12 @@ export default class Recorder extends EventEmitter {
   }
 
   /**
-   * Choose a sensible default encoder from those available. Doesn't choose AV1
-   * variants, those are considered advanced and not a sensible default. They
-   * need hardware rendering of the app to be enabled.
+   * Choose a sensible default encoder: hardware H.264 for compatibility,
+   * HEVC above 4K where the H.264 encoder runs out of resolution.
    */
   public getSensibleEncoderDefault() {
-    const encoders = this.getAvailableEncoders();
     const highRes = isHighRes(this.resolution);
-
-    if (highRes) {
-      // Just go for the software encoder if high res.
-      return ESupportedEncoders.OBS_X264;
-    }
-
-    if (encoders.includes(ESupportedEncoders.NVENC_H264)) {
-      return ESupportedEncoders.NVENC_H264;
-    }
-
-    if (encoders.includes(ESupportedEncoders.QSV_H264)) {
-      return ESupportedEncoders.QSV_H264;
-    }
-
-    if (encoders.includes(ESupportedEncoders.AMD_H264)) {
-      // Deliberatly after other hardware encoders as sometimes the
-      // AMD iGPU can provide this and it's not usable.
-      return ESupportedEncoders.AMD_H264;
-    }
-
-    return ESupportedEncoders.OBS_X264;
+    return highRes ? ESupportedEncoders.VT_HEVC : ESupportedEncoders.VT_H264;
   }
 
   /**

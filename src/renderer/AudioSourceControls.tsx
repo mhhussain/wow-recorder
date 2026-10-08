@@ -42,7 +42,7 @@ import {
   ToggleGroupItem,
 } from './components/ToggleGroup/ToggleGroup';
 
-import { ObsListItem } from 'noobs';
+import { ObsListItem } from 'main/mac/noobsTypes';
 import {
   Popover,
   PopoverContent,

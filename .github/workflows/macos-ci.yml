@@ -1,0 +1,155 @@
+# macOS CI for the personal macOS port. Runs on the owner's Mac.
+#
+# Security rules (mandatory, see CLAUDE.md): self-hosted runner jobs only
+# trigger on push to macos-port and workflow_dispatch; no pull_request,
+# pull_request_target or schedule. No sudo, no system-wide installs, no
+# reads outside the workspace. All tool caches live in .ci-cache/ inside the
+# workspace, which persists between runs because checkout does not clean.
+name: macos-ci
+
+on:
+  push:
+    branches: [macos-port]
+    # Docs-only pushes do not need the runner.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      clean:
+        description: Wipe the workspace (node_modules, caches) before building
+        type: boolean
+        default: false
+
+concurrency:
+  group: macos-ci
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: [self-hosted, macOS, ARM64, wow-mac]
+    timeout-minutes: 30
+    env:
+      CI_CACHE: ${{ github.workspace }}/.ci-cache
+      npm_config_cache: ${{ github.workspace }}/.ci-cache/npm
+      electron_config_cache: ${{ github.workspace }}/.ci-cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.ci-cache/electron-builder
+      # node-gyp header cache for native module rebuilds.
+      npm_config_devdir: ${{ github.workspace }}/.ci-cache/node-gyp
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # Skip the large raid and M+ logs (unit tests use excerpts of them)
+      # and upstream's duplicate copies; keep the small PvP and Mac logs.
+      SPARSE_PATTERNS: |
+        /*
+        !/tests/logs/
+        !/tests/fixtures/combatlogs/retail/raid_*
+        !/tests/fixtures/combatlogs/retail/mythic_plus*
+        !/tests/fixtures/combatlogs/retail/beloren_boss_hp.txt
+        !/tests/fixtures/combatlogs/retail/coiled_altar_boss_hp.txt
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: ${{ inputs.clean == true }}
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: ${{ env.SPARSE_PATTERNS }}
+
+      - name: Apply sparse checkout
+        # The workspace persists between runs, and files an earlier pattern
+        # set excluded stayed excluded after the patterns changed (the PvP
+        # logs never reached the runner). `set` rewrites and reapplies them.
+        run: |
+          printf '%s\n' "$SPARSE_PATTERNS" | git sparse-checkout set --no-cone --stdin
+          git config --get-regexp '^core\.sparse'
+          ls tests/fixtures/combatlogs/retail
+
+      - name: Toolchain
+        run: |
+          sw_vers -productVersion
+          xcrun --show-sdk-version
+          node -v && npm -v
+
+      - name: Install dependencies (skipped when lockfiles are unchanged)
+        run: |
+          HASH=$(cat package-lock.json release/app/package-lock.json | shasum -a 256 | cut -d' ' -f1)
+          STAMP=node_modules/.ci-lock-hash
+          if [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$HASH" ]; then
+            echo "Dependencies up to date"
+          else
+            npm ci --no-audit --no-fund
+            echo "$HASH" > "$STAMP"
+          fi
+
+      - name: Typecheck
+        timeout-minutes: 5
+        run: npm run typecheck
+
+      - name: Lint
+        timeout-minutes: 5
+        run: npm run lint
+
+      - name: Build native binaries (capture helper, ffmpeg)
+        run: npm run build:native
+
+      - name: Unit tests (includes shim-to-helper integration)
+        timeout-minutes: 5
+        run: npm test
+
+      - name: Capture helper probe and self-test
+        timeout-minutes: 5
+        run: |
+          binaries/wcr-capture probe
+          rm -rf "$CI_CACHE/selftest"
+          binaries/wcr-capture selftest "$CI_CACHE/selftest"
+          file binaries/ffmpeg
+          for f in "$CI_CACHE"/selftest/*.mp4; do
+            binaries/ffmpeg -v error -i "$f" -map 0 -f null - && echo "decode OK: $(basename "$f")"
+          done
+
+      - name: Build app bundles
+        run: npm run build
+
+      - name: Package app (arm64, ad-hoc signed)
+        run: npx electron-builder build --mac --arm64 --publish never
+
+      - name: Verify package
+        run: |
+          APP="release/build/mac-arm64/WarcraftRecorder.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | grep -E "^(Identifier|Format|Signature)"
+          plutil -p "$APP/Contents/Info.plist" | grep -E "CFBundleIdentifier|UsageDescription|LSMinimumSystemVersion"
+          ls -l "$APP/Contents/Resources/binaries"
+          "$APP/Contents/Resources/binaries/wcr-capture" list > /dev/null && echo "helper runs from the bundle"
+          "$APP/Contents/Resources/binaries/ffmpeg" -hide_banner -version | head -1
+          find "$APP/Contents/Resources/app.asar.unpacked" -name "*.node" -exec file {} \;
+          # ditto keeps the framework symlinks and permissions that a plain
+          # directory upload would lose.
+          rm -f release/build/WarcraftRecorder-macos-arm64.zip
+          ditto -c -k --keepParent "$APP" release/build/WarcraftRecorder-macos-arm64.zip
+          ls -lh release/build/WarcraftRecorder-macos-arm64.zip
+
+      - name: Boot smoke test (packaged app, no permission requests)
+        timeout-minutes: 3
+        run: |
+          # See src/main/smokeTest.ts: hidden window, user data and logs in the
+          # workspace, no prompts, no WoW polling; exits 0 when the app boots.
+          rm -rf "$CI_CACHE/smoke"
+          if ! WCR_SMOKE_TEST="$CI_CACHE/smoke" release/build/mac-arm64/WarcraftRecorder.app/Contents/MacOS/WarcraftRecorder > "$CI_CACHE/smoke-stdout.txt" 2>&1; then
+            echo "Smoke test failed. App log:"
+            tail -n 200 "$CI_CACHE"/smoke/logs/*.log || tail -n 200 "$CI_CACHE/smoke-stdout.txt"
+            exit 1
+          fi
+          grep -h "SmokeTest\|CaptureHelper\|\[wcr-capture\]" "$CI_CACHE"/smoke/logs/*.log | tail -n 40
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: WarcraftRecorder-macos-arm64-${{ github.sha }}
+          path: release/build/WarcraftRecorder-macos-arm64.zip
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error

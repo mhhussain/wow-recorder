@@ -1,6 +1,13 @@
-import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
+import {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { configSchema, ConfigurationSchema } from 'config/configSchema';
-import { Info, Lock } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { AppState, SceneItem } from 'main/types';
 import { getLocalePhrase } from 'localisation/translations';
 import { setConfigValues } from './useSettings';
@@ -22,20 +29,20 @@ interface IProps {
 
 const ChatOverlayControls = (props: IProps) => {
   const { appState, config, setConfig } = props;
-  const { cloudStatus } = appState;
   const initialRender = useRef(true);
 
   const [cropMaxX, setCropMaxX] = useState(0);
   const [cropMaxY, setCropMaxY] = useState(0);
 
-  const initCropSliders = async () => {
+  const initCropSliders = useCallback(async () => {
     if (!config.chatOverlayEnabled) return;
     const pos = await ipc.getSourcePosition(SceneItem.OVERLAY);
-    // Don't let them scale to less than 80% of the dimension.
-    // That seems reasonable to avoid weird issues.
-    setCropMaxX(0.8 * Math.round(pos.width / 2));
-    setCropMaxY(0.8 * Math.round(pos.height / 2));
-  };
+    if (!pos) return;
+    // Don't let them crop more than 80% of the dimension. Crop is in image
+    // pixels, so undo the scale.
+    setCropMaxX(Math.round((0.8 * pos.width) / pos.scaleX / 2));
+    setCropMaxY(Math.round((0.8 * pos.height) / pos.scaleY / 2));
+  }, [config.chatOverlayEnabled]);
 
   useEffect(() => {
     if (initialRender.current) return;
@@ -47,10 +54,16 @@ const ChatOverlayControls = (props: IProps) => {
     });
 
     ipc.reconfigureOverlay();
+
+    // The image may have changed size. There is no preview on macOS to
+    // signal that, so re-read it once the main process has applied it.
+    const timer = setTimeout(initCropSliders, 500);
+    return () => clearTimeout(timer);
   }, [
     config.chatOverlayEnabled,
     config.chatOverlayOwnImage,
     config.chatOverlayOwnImagePath,
+    initCropSliders,
   ]);
 
   useEffect(() => {
@@ -123,21 +136,14 @@ const ChatOverlayControls = (props: IProps) => {
             )}
             side="right"
           >
-            {cloudStatus.authorized ? (
-              <Info size={20} className="inline-flex" />
-            ) : (
-              <Lock size={20} className="inline-flex" />
-            )}
+            <Info size={20} className="inline-flex" />
           </Tooltip>
         </Label>
         <div className="flex h-10 items-center">
           <Switch
             checked={config.chatOverlayOwnImage}
             onCheckedChange={setOwnImage}
-            disabled={
-              !config.chatOverlayOwnImage &&
-              (!config.chatOverlayEnabled || !cloudStatus.authorized)
-            }
+            disabled={!config.chatOverlayOwnImage && !config.chatOverlayEnabled}
           />
         </div>
       </div>
@@ -186,71 +192,134 @@ const ChatOverlayControls = (props: IProps) => {
     );
   };
 
-  const setCropX = async (array: number[]) => {
-    const value = array[0];
-    setConfig((prev) => ({ ...prev, chatOverlayCropX: value }));
+  /**
+   * There is no live preview on macOS to drag the overlay around, so
+   * position and scale are set with sliders, in canvas pixels. Crop stays
+   * the same number of image pixels when the scale changes.
+   */
+  const moveOverlay = async (change: {
+    x?: number;
+    y?: number;
+    scale?: number;
+    cropX?: number;
+    cropY?: number;
+  }) => {
     const p = await ipc.getSourcePosition(SceneItem.OVERLAY);
-    p.cropLeft = value;
-    p.cropRight = value;
+    if (!p) return;
+
+    const scale = change.scale ?? p.scaleX;
+    const ratio = scale / p.scaleX;
+
+    if (change.x !== undefined) p.x = change.x;
+    if (change.y !== undefined) p.y = change.y;
+
+    // Width, height and crop are in scaled pixels; setSourcePosition
+    // derives the new scale from the width.
+    p.width *= ratio;
+    p.height *= ratio;
+    p.cropLeft = (change.cropX ?? p.cropLeft / p.scaleX) * scale;
+    p.cropRight = (change.cropX ?? p.cropRight / p.scaleX) * scale;
+    p.cropTop = (change.cropY ?? p.cropTop / p.scaleY) * scale;
+    p.cropBottom = (change.cropY ?? p.cropBottom / p.scaleY) * scale;
+
     await ipc.setSourcePosition(SceneItem.OVERLAY, p);
   };
 
-  const setCropY = async (array: number[]) => {
-    const value = array[0];
-    setConfig((prev) => ({ ...prev, chatOverlayCropY: value }));
-    const p = await ipc.getSourcePosition(SceneItem.OVERLAY);
-    p.cropTop = value;
-    p.cropBottom = value;
-    await ipc.setSourcePosition(SceneItem.OVERLAY, p);
+  const setOverlayValue = (
+    key:
+      | 'chatOverlayXPosition'
+      | 'chatOverlayYPosition'
+      | 'chatOverlayScale'
+      | 'chatOverlayCropX'
+      | 'chatOverlayCropY',
+    value: number,
+  ) => {
+    setConfig((prev) => ({ ...prev, [key]: value }));
+
+    const change = {
+      chatOverlayXPosition: { x: value },
+      chatOverlayYPosition: { y: value },
+      chatOverlayScale: { scale: value },
+      chatOverlayCropX: { cropX: value },
+      chatOverlayCropY: { cropY: value },
+    }[key];
+
+    moveOverlay(change);
   };
 
-  const getChatOverlayCropSliders = () => {
+  const [canvasWidth, canvasHeight] = config.obsOutputResolution
+    .split('x')
+    .map(Number);
+
+  const getSlider = (
+    label: Phrase,
+    description: Phrase,
+    key: Parameters<typeof setOverlayValue>[0],
+    max: number,
+    step: number,
+    min = 0,
+  ) => (
+    <div className="flex gap-x-3 items-center" key={key}>
+      <Label className="flex items-center w-[100px] mb-0">
+        {getLocalePhrase(appState.language, label)}
+        <Tooltip
+          content={getLocalePhrase(appState.language, description)}
+          side="right"
+        >
+          <Info size={20} className="inline-flex ml-2" />
+        </Tooltip>
+      </Label>
+      <div className="flex w-[150px] items-center">
+        <Slider
+          value={[config[key]]}
+          min={min}
+          max={max}
+          step={step}
+          onValueChange={(array) => setOverlayValue(key, array[0])}
+        />
+      </div>
+    </div>
+  );
+
+  const getChatOverlayPositionSliders = () => {
     return (
       <div className="flex flex-col gap-y-4 w-full mt-2">
-        <div className="flex gap-x-3 items-center">
-          <Label className="flex items-center w-[75px] mb-0">
-            {getLocalePhrase(appState.language, Phrase.WidthLabel)}
-            <Tooltip
-              content={getLocalePhrase(
-                appState.language,
-                configSchema.chatOverlayCropX.description,
-              )}
-              side="right"
-            >
-              <Info size={20} className="inline-flex ml-2" />
-            </Tooltip>
-          </Label>
-          <div className="flex w-[150px] items-center">
-            <Slider
-              value={[config.chatOverlayCropX]}
-              max={cropMaxX}
-              step={1}
-              onValueChange={setCropX}
-            />
-          </div>
-        </div>
-        <div className="flex gap-x-3 items-center">
-          <Label className="flex items-center w-[75px] mb-0">
-            {getLocalePhrase(appState.language, Phrase.HeightLabel)}
-            <Tooltip
-              content={getLocalePhrase(
-                appState.language,
-                configSchema.chatOverlayCropY.description,
-              )}
-              side="right"
-            >
-              <Info size={20} className="inline-flex ml-2" />
-            </Tooltip>
-          </Label>
-          <div className="flex w-[150px] items-center">
-            <Slider
-              value={[config.chatOverlayCropY]}
-              max={cropMaxY}
-              step={1}
-              onValueChange={setCropY}
-            />
-          </div>
-        </div>
+        {getSlider(
+          Phrase.XPositionLabel,
+          Phrase.ChatOverlayXPositionDescription,
+          'chatOverlayXPosition',
+          canvasWidth || 1920,
+          1,
+        )}
+        {getSlider(
+          Phrase.YPositionLabel,
+          Phrase.ChatOverlayYPositionDescription,
+          'chatOverlayYPosition',
+          canvasHeight || 1080,
+          1,
+        )}
+        {getSlider(
+          Phrase.ScaleLabel,
+          Phrase.ChatOverlayScaleDescription,
+          'chatOverlayScale',
+          3,
+          0.05,
+          0.1,
+        )}
+        {getSlider(
+          Phrase.WidthLabel,
+          Phrase.ChatOverlayWidthDescription,
+          'chatOverlayCropX',
+          cropMaxX,
+          1,
+        )}
+        {getSlider(
+          Phrase.HeightLabel,
+          Phrase.ChatOverlayHeightDescription,
+          'chatOverlayCropY',
+          cropMaxY,
+          1,
+        )}
       </div>
     );
   };
@@ -274,7 +343,7 @@ const ChatOverlayControls = (props: IProps) => {
           {getLocalePhrase(appState.language, Phrase.ErrorCustomImageFileType)}
         </p>
       )}
-      {config.chatOverlayEnabled && getChatOverlayCropSliders()}
+      {config.chatOverlayEnabled && getChatOverlayPositionSliders()}
     </div>
   );
 };
